@@ -16,10 +16,9 @@ public sealed class InspectorControlsTests
     public void ConstructorIsOptionalAndDoesNotInvokeControls()
     {
         int calls = 0;
-        // Constructor does not read assets or start native resources.
-        var settings = (InspectorSettings)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(InspectorSettings));
-        using var legacy = new ImGuiInspector(settings);
-        using var explicitNull = new ImGuiInspector(settings, null);
+        using var legacy = new ImGuiInspector(Settings());
+        using var explicitNull = new ImGuiInspector(Settings(), null);
+        var settings = Settings();
         using var controls = new ImGuiInspector(settings, () => calls++);
         Assert.Same(settings, controls.Settings);
         Assert.Equal(0, calls);
@@ -34,95 +33,93 @@ public sealed class InspectorControlsTests
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    public void CpuFrameInvokesOwnWindowBeforeRenderAndCancelsOnException(bool fail, bool omitControls)
+    public void ControlsRunInOpenFrameBeforeDiagnosticsAndCancelImmediatelyOnException(bool fail, bool omitControls)
     {
         var previous = Ui.GetCurrentContext();
-        var context = Ui.CreateContext();
+        int calls = 0;
+        bool diagnosticsEmitted = false;
+        var expected = new InvalidOperationException("application UI failed");
+        ImGuiInspector? callbackInspector = null;
+        using var inspector = new ImGuiInspector(Settings(), omitControls ? null : () =>
+        {
+            calls++;
+            Assert.False(diagnosticsEmitted);
+            Assert.Equal(Field("_uiContext").GetValue(callbackInspector!), Ui.GetCurrentContext());
+            Assert.True(Ui.GetCurrentContext().WithinFrameScope);
+            Assert.True((bool)Field("_uiFrame").GetValue(callbackInspector!)!);
+            Ui.Begin("Application controls"u8);
+            try
+            {
+                Ui.Text("CPU controls"u8);
+                if (fail) throw expected;
+            }
+            finally { Ui.End(); }
+        });
+        callbackInspector = inspector;
         try
         {
-            var io = Ui.GetIO();
-            io.IniFilename = default; io.LogFilename = default;
-            io.DisplaySize = new float2(640, 480);
-            io.DeltaTime = 1f / 60;
-            // Dynamic font atlas support without a GPU backend; no texture upload is performed.
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasTextures;
-            int calls = 0;
-            var expected = new InvalidOperationException("application UI failed");
-            var settings = (InspectorSettings)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(InspectorSettings));
-            ImGuiInspector? callbackInspector = null;
-            using var inspector = new ImGuiInspector(settings, omitControls ? null : () =>
-            {
-                calls++;
-                Assert.Equal(context, Ui.GetCurrentContext());
-                Assert.True(context.WithinFrameScope);
-                Assert.True((bool)Field("_uiFrame").GetValue(callbackInspector!)!);
-                Ui.Begin("Application controls"u8);
-                try
-                {
-                    Ui.Text("CPU controls"u8);
-                    if (fail) throw expected;
-                }
-                finally { Ui.End(); }
-            });
-            callbackInspector = inspector;
-            Field("_uiContext").SetValue(inspector, context);
-            // The test owns/destroys the CPU context; inspector owns frame cancellation only.
-            Ui.NewFrame();
-            Field("_uiFrame").SetValue(inspector, true);
-            Ui.Begin("Diagnostics (read only)"u8);
-            Ui.End();
-            var complete = typeof(ImGuiInspector).GetMethod("CompleteUiFrame", PrivateInstance)!;
+            AttachCpuFrame(inspector);
             if (fail)
             {
-                var error = Assert.Throws<TargetInvocationException>(() => complete.Invoke(inspector, null));
+                var error = Assert.Throws<TargetInvocationException>(() => Invoke(inspector, "DrawControls"));
                 Assert.Same(expected, error.InnerException);
+                Assert.False(Ui.GetCurrentContext().WithinFrameScope);
+                Assert.False((bool)Field("_uiFrame").GetValue(inspector)!);
             }
             else
             {
-                complete.Invoke(inspector, null);
-                Assert.True(Ui.GetDrawData().Valid);
+                Invoke(inspector, "DrawControls");
+                // Callback does not render/end the frame: diagnostics are emitted later in Prepare.
+                Assert.True(Ui.GetCurrentContext().WithinFrameScope);
+                Assert.True((bool)Field("_uiFrame").GetValue(inspector)!);
+                Ui.Begin("Diagnostics (read only)"u8);
+                Ui.End();
+                diagnosticsEmitted = true;
             }
             Assert.Equal(omitControls ? 0 : 1, calls);
-            Assert.False(context.WithinFrameScope);
-            Assert.Equal(context, Ui.GetCurrentContext());
-            Assert.False((bool)Field("_uiFrame").GetValue(inspector)!);
-            // Cancellation is idempotent, and the next frame is usable after either path.
-            typeof(ImGuiInspector).GetMethod("Cancel", PrivateInstance)!.Invoke(inspector, null);
-            Ui.NewFrame();
-            Ui.EndFrame();
+            Invoke(inspector, "Cancel");
+            Invoke(inspector, "Cancel");
+            Assert.False(Ui.GetCurrentContext().WithinFrameScope);
+            // Simulate the renderer's fence-protected Release following a failed BeginFrame.
+            // There is no GPU work in this test, so this retirement boundary needs no fence.
+            Invoke(inspector, "Release");
+            AssertRetired(inspector);
         }
         finally
         {
-            Ui.DestroyContext(context);
+            inspector.Dispose();
             Ui.SetCurrentContext(previous);
         }
     }
 
     [Fact]
-    public void CallbackFailureKeepsContextOwnedUntilInspectorDisposal()
+    public void FirstBeginFailureRetiresContextAndNextVisibleBeginRecreatesIt()
     {
         var previous = Ui.GetCurrentContext();
-        var context = Ui.CreateContext();
-        var settings = (InspectorSettings)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(InspectorSettings));
-        var inspector = new ImGuiInspector(settings, () => throw new InvalidOperationException("UI failure"));
-        Field("_uiContext").SetValue(inspector, context);
-        Field("_hasUiContext").SetValue(inspector, true);
+        int calls = 0;
+        using var inspector = new ImGuiInspector(Settings(), () =>
+        {
+            if (++calls == 1) throw new InvalidOperationException("first begin failed");
+            Ui.Begin("Recreated controls"u8);
+            Ui.End();
+        });
         try
         {
-            var io = Ui.GetIO();
-            io.IniFilename = default; io.LogFilename = default;
-            io.DisplaySize = new float2(640, 480); io.DeltaTime = 1f / 60;
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasTextures;
-            Ui.NewFrame();
-            Field("_uiFrame").SetValue(inspector, true);
-            Assert.Throws<TargetInvocationException>(() =>
-                typeof(ImGuiInspector).GetMethod("CompleteUiFrame", PrivateInstance)!.Invoke(inspector, null));
-            Assert.False(context.WithinFrameScope);
-            Assert.True((bool)Field("_hasUiContext").GetValue(inspector)!);
+            AttachCpuFrame(inspector);
+            Assert.Throws<TargetInvocationException>(() => Invoke(inspector, "DrawControls"));
+            Assert.False(Ui.GetCurrentContext().WithinFrameScope);
+            // BeginOverlayFrame must release even though InspectorActive was never set.
+            Invoke(inspector, "Release");
+            AssertRetired(inspector); // Hidden next begin has no stranded context/platform callbacks.
+            Invoke(inspector, "Cancel");
+            Invoke(inspector, "Release");
+            AttachCpuFrame(inspector); // CPU analogue of Ensure recreating context/backends.
+            Invoke(inspector, "DrawControls");
+            Assert.Equal(2, calls);
+            Assert.True(Ui.GetCurrentContext().WithinFrameScope);
             inspector.Dispose();
-            Assert.False((bool)Field("_hasUiContext").GetValue(inspector)!);
-            Assert.True(Ui.GetCurrentContext().IsNull());
-            inspector.Dispose(); // Idempotent, including after callback failure.
+            AssertRetired(inspector);
+            inspector.Dispose();
         }
         finally
         {
@@ -130,6 +127,36 @@ public sealed class InspectorControlsTests
             Ui.SetCurrentContext(previous);
         }
     }
+
+    private static InspectorSettings Settings() =>
+        // No asset loading: settings validation is independent of callback/frame ownership.
+        (InspectorSettings)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(InspectorSettings));
+
+    private static void AttachCpuFrame(ImGuiInspector inspector)
+    {
+        var context = Ui.CreateContext();
+        Field("_uiContext").SetValue(inspector, context);
+        Field("_hasUiContext").SetValue(inspector, true);
+        var io = Ui.GetIO();
+        io.IniFilename = default; io.LogFilename = default;
+        io.DisplaySize = new float2(640, 480); io.DeltaTime = 1f / 60;
+        // Dynamic font atlas support without a GPU backend; no texture upload is performed.
+        io.BackendFlags |= ImGuiBackendFlags.RendererHasTextures;
+        Ui.NewFrame();
+        Field("_uiFrame").SetValue(inspector, true);
+    }
+
+    private static void AssertRetired(ImGuiInspector inspector)
+    {
+        Assert.False((bool)Field("_uiFrame").GetValue(inspector)!);
+        Assert.False((bool)Field("_hasUiContext").GetValue(inspector)!);
+        Assert.Null(Field("_uiRenderer").GetValue(inspector));
+        Assert.Null(Field("_uiPlatform").GetValue(inspector));
+        Assert.True(Ui.GetCurrentContext().IsNull());
+    }
+
+    private static void Invoke(ImGuiInspector inspector, string method) =>
+        typeof(ImGuiInspector).GetMethod(method, PrivateInstance)!.Invoke(inspector, null);
 
     private static FieldInfo Field(string name) => typeof(ImGuiInspector).GetField(name, PrivateInstance)!;
 }

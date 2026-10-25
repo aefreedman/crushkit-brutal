@@ -42,8 +42,7 @@ public sealed unsafe partial class VulkanRenderer
         if (!_inspectorVisible && _inspectorActive)
         {
             // Remove callbacks/context immediately on close, even if minimized, after their last GPU use.
-            Check(_device!.WaitForFences([_frameFence], true, -1), "Wait for inspector retirement");
-            ReleaseInspector();
+            RetireInspector();
         }
         var size = _window.FramebufferSize;
         if (_window.IsIconified || size.X <= 0 || size.Y <= 0) return _captureTracker.Update(false, false, false);
@@ -52,7 +51,10 @@ public sealed unsafe partial class VulkanRenderer
         OverlayCapture capture = default;
         if (_inspectorVisible && _inspector != null)
         {
-            capture = _inspector.BeginFrame(this);
+            // Application UI runs here, before Draw can acquire a swapchain image. A failed first
+            // begin must retire resources too: _inspectorActive has not been set yet. Prior frames
+            // may still use the backends, so retirement waits the same fence as closing the inspector.
+            ResourceLifetime.OnFailure(() => capture = _inspector.BeginFrame(this), RetireInspector);
             _inspectorActive = _uiFrame = true;
         }
         _overlayActiveFrame = true;
@@ -143,6 +145,12 @@ public sealed unsafe partial class VulkanRenderer
     private void CheckOverlayThread()
     {
         if (Environment.CurrentManagedThreadId != _ownerThread) throw new InvalidOperationException("Overlay is main-thread owned.");
+    }
+
+    private void RetireInspector()
+    {
+        Check(_device!.WaitForFences([_frameFence], true, -1), "Wait for inspector retirement");
+        ReleaseInspector();
     }
 
     private void ReleaseInspector()

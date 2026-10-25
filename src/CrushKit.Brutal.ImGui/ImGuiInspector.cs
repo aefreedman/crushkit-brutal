@@ -18,11 +18,12 @@ public sealed class ImGuiInspector : VulkanInspector
 
     /// <summary>Creates an inspector with optional application UI.</summary>
     /// <param name="settings">Validated inspector assets and layout, retained by reference.</param>
-    /// <param name="drawControls">Optional synchronous renderer-thread callback, after the diagnostics window
-    /// ends and before Render, with this inspector's context and frame active. May emit its own windows;
+    /// <param name="drawControls">Optional synchronous renderer-thread callback, immediately after NewFrame
+    /// during BeginOverlayFrame, before diagnostics and swapchain image acquisition, with this inspector's
+    /// context and frame active. May emit its own windows;
     /// balance all UI scopes (also on exceptions). UI only: do not call NewFrame, Render, EndFrame, change
-    /// or destroy contexts, or dispose the renderer/inspector. Exceptions cancel the frame and propagate;
-    /// context/backend ownership and retirement remain with the inspector.</param>
+    /// or destroy contexts, or dispose the renderer/inspector. Exceptions cancel the frame, retire the
+    /// context/backends at the renderer's fence boundary, and propagate. A later begin recreates them.</param>
     public ImGuiInspector(InspectorSettings settings, Action? drawControls = null)
     {
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -48,6 +49,7 @@ public sealed class ImGuiInspector : VulkanInspector
         _uiRenderer!.NewFrame(); _uiPlatform!.NewFrame();
         Ui.GetStyle().FontSizeBase = InspectorFont.LogicalSize(Settings.FontSize, Ui.GetIO().DisplayFramebufferScale);
         Ui.NewFrame(); _uiFrame = true;
+        DrawControls();
         return new(Ui.GetIO().WantCaptureMouse, Ui.GetIO().WantCaptureKeyboard, false);
     }
 
@@ -102,16 +104,13 @@ public sealed class ImGuiInspector : VulkanInspector
             }
             _recordedInspector = Visible(Ui.GetWindowPos(), Ui.GetWindowPos() + Ui.GetWindowSize(), io.DisplaySize);
         }
-        Ui.End();
-        CompleteUiFrame();
+        Ui.End(); Ui.Render(); _uiFrame = false;
         return new(Ui.GetDrawData().TotalIdxCount, _recordedImage, _recordedInspector);
     }
 
-    private void CompleteUiFrame() => ResourceLifetime.OnFailure(() =>
-    {
-        _drawControls?.Invoke();
-        Ui.Render(); _uiFrame = false;
-    }, Cancel);
+    // BeginOverlayFrame retires context/backends after the shared fence on any BeginFrame failure.
+    // Cancel here immediately: the renderer has not yet marked this inspector frame as active.
+    private void DrawControls() => ResourceLifetime.OnFailure(() => _drawControls?.Invoke(), Cancel);
 
     private static bool Visible(float2 min, float2 max, float2 size) => max.X > 0 && max.Y > 0 && min.X < size.X && min.Y < size.Y && max.X > min.X && max.Y > min.Y;
 
