@@ -102,7 +102,6 @@ public sealed class ImGuiInspector : VulkanInspector
                     Rows("font", ("Inspector TTF", $"{_inspectorFont.GetDebugName()}"),
                         ("Logical px", $"{Ui.GetFontSize():F2}"), ("Physical px", $"{Ui.GetFontSize() * scale.Y:F2}"),
                         ("Framebuffer scale", $"{scale.X:F2} x {scale.Y:F2}"), ("Raster density", $"{Ui.GetFontBaked().RasterizerDensity:F2}"));
-                Ui.TextWrapped("Drag title bar to move; resize from edges."u8);
                 _recordedInspector = Visible(Ui.GetWindowPos(), Ui.GetWindowPos() + Ui.GetWindowSize(), io.DisplaySize);
             }
         }
