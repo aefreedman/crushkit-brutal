@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../CrushKit.Brutal.Draw2D/CrushKit.Brutal.Draw2D.csproj" />
+    <EmbeddedResource Include="Shaders/*" />
+    <PackageReference Include="Ahwoo.BRUTAL.Sdl.Ttf" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Texture" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Texture.Abstractions" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Core" Version="2026.10.4" />
+    <PackageReference Include="Ahwoo.BRUTAL.Glfw" Version="2026.10.5" />
+    <PackageReference Include="Ahwoo.BRUTAL.ShaderC" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Vulkan" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Vulkan.Abstractions" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Vulkan.Vma" Version="2026.10.3" />
+  </ItemGroup>
+  <Import Project="Notices.props" />
+</Project>

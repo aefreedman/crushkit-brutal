@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../CrushKit.Brutal.Vulkan/CrushKit.Brutal.Vulkan.csproj" />
+    <PackageReference Include="Ahwoo.BRUTAL.ImGui" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.ImGui.Backends" Version="2026.10.3" />
+  </ItemGroup>
+  <Import Project="Notices.props" />
+</Project>
