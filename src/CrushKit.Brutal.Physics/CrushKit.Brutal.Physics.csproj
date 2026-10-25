@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.BRUTAL.Box2D" Version="[2026.10.2]" />
+    <PackageReference Include="ZeroAllocJobScheduler" Version="[1.1.2]" />
+    <InternalsVisibleTo Include="Physics.Tests" />
+  </ItemGroup>
+  <Import Project="Notices.props" />
+</Project>

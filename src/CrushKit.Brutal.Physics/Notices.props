@@ -1,0 +1,9 @@
+<Project>
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)ahwoo.brutal.box2d/2026.10.2/LICENSE.txt;$(NuGetPackageRoot)ahwoo.brutal.box2d/2026.10.2/NOTICE.txt;$(NuGetPackageRoot)ahwoo.brutal.box2d/2026.10.2/LICENSES/**/*" Link="Licenses/CrushKit/Physics/Box2D/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/Box2D/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="$(NuGetPackageRoot)ahwoo.brutal.box2d.native/2026.10.2/LICENSE.txt;$(NuGetPackageRoot)ahwoo.brutal.box2d.native/2026.10.2/NOTICE.txt;$(NuGetPackageRoot)ahwoo.brutal.box2d.native/2026.10.2/LICENSES/**/*" Link="Licenses/CrushKit/Physics/Box2D.Native/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/Box2D.Native/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="$(NuGetPackageRoot)ahwoo.brutal.core/2026.10.4/LICENSE.txt;$(NuGetPackageRoot)ahwoo.brutal.core/2026.10.4/NOTICE.txt;$(NuGetPackageRoot)ahwoo.brutal.core/2026.10.4/LICENSES/**/*" Link="Licenses/CrushKit/Physics/Core/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/Core/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="$(NuGetPackageRoot)ahwoo.brutal.numerics/2026.10.2/LICENSE.txt;$(NuGetPackageRoot)ahwoo.brutal.numerics/2026.10.2/NOTICE.txt;$(NuGetPackageRoot)ahwoo.brutal.numerics/2026.10.2/LICENSES/**/*" Link="Licenses/CrushKit/Physics/Numerics/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/Numerics/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="CrushKit.Brutal.Physics.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+</Project>
