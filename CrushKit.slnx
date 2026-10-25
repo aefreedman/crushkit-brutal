@@ -1,13 +1,17 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/EcsJobs/EcsJobs.csproj" />
     <Project Path="samples/InputAudio/InputAudio.csproj" />
+    <Project Path="samples/PhysicsJobs/PhysicsJobs.csproj" />
     <Project Path="samples/ShapeGallery/ShapeGallery.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/CrushKit.Brutal.Audio/CrushKit.Brutal.Audio.csproj" />
     <Project Path="src/CrushKit.Brutal.Draw2D/CrushKit.Brutal.Draw2D.csproj" />
+    <Project Path="src/CrushKit.Brutal.Ecs/CrushKit.Brutal.Ecs.csproj" />
     <Project Path="src/CrushKit.Brutal.ImGui/CrushKit.Brutal.ImGui.csproj" />
     <Project Path="src/CrushKit.Brutal.Input/CrushKit.Brutal.Input.csproj" />
+    <Project Path="src/CrushKit.Brutal.Physics/CrushKit.Brutal.Physics.csproj" />
     <Project Path="src/CrushKit.Brutal.Vulkan/CrushKit.Brutal.Vulkan.csproj" />
   </Folder>
   <Folder Name="/tests/" />
@@ -17,8 +21,14 @@
   <Folder Name="/tests/Draw2D/">
     <Project Path="tests/Draw2D/Draw2D.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Ecs/">
+    <Project Path="tests/Ecs/Ecs.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Input/">
     <Project Path="tests/Input/Input.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Physics/">
+    <Project Path="tests/Physics/Physics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Vulkan/">
     <Project Path="tests/Vulkan/Vulkan.Tests.csproj" />

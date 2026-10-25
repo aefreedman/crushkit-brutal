@@ -94,6 +94,58 @@ public sealed class Box2DTaskSchedulerTests
         GC.KeepAlive(callback);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DispatchFailureAfterScheduleDrainsBeforeReturningNull(bool afterFlush)
+    {
+        var point = afterFlush ? Box2DTaskScheduler.DispatchPoint.AfterFlush : Box2DTaskScheduler.DispatchPoint.AfterSchedule;
+        using var injected = new ManualResetEventSlim();
+        using var started = new CountdownEvent(2);
+        using var release = new ManualResetEventSlim();
+        var failure = new InvalidOperationException("injected known-handle dispatch failure");
+        using var scheduler = new Box2DTaskScheduler(2, at =>
+        {
+            if (at != point) return;
+            injected.Set();
+            throw failure;
+        });
+        int active = 0, completed = 0;
+        B2TaskCallback callback = (start, end, worker, context) =>
+        {
+            Interlocked.Increment(ref active);
+            try
+            {
+                started.Signal();
+                Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+                Interlocked.Increment(ref completed);
+            }
+            finally { Interlocked.Decrement(ref active); }
+        };
+        nint pointer = Marshal.GetFunctionPointerForDelegate(callback);
+        static unsafe nint Enqueue(Box2DTaskScheduler owner, nint callback) =>
+            (nint)owner.Enqueue(callback, 100, 1, 0, 0);
+        var enqueue = Task.Run(() => Enqueue(scheduler, pointer));
+        try
+        {
+            Assert.True(injected.Wait(TimeSpan.FromSeconds(10)));
+            Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+            Assert.False(enqueue.IsCompleted); // Null must not imply completion while callbacks are active.
+            Assert.Equal(2, Volatile.Read(ref active));
+            release.Set();
+            Assert.Equal(0, await enqueue.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.Equal(0, Volatile.Read(ref active));
+            Assert.Equal(2, Volatile.Read(ref completed)); // No duplicate flush/dispatch.
+            Assert.Same(failure, Assert.Throws<InvalidOperationException>(scheduler.ThrowIfFaulted));
+        }
+        finally
+        {
+            release.Set();
+            await enqueue.WaitAsync(TimeSpan.FromSeconds(10));
+            GC.KeepAlive(callback);
+        }
+    }
+
     [Fact]
     public unsafe void InvalidCallbackInputAndFinishTokenAreCaptured()
     {

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Arch" Version="[2.1.0]" />
+    <PackageReference Include="ZeroAllocJobScheduler" Version="[1.1.2]" />
+  </ItemGroup>
+  <Import Project="Notices.props" />
+</Project>

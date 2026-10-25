@@ -11,7 +11,7 @@ try {
     $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
     $packages = Join-Path $root 'artifacts/packages'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    foreach ($name in @('Draw2D', 'Vulkan', 'ImGui', 'Input', 'Audio')) {
+    foreach ($name in @('Draw2D', 'Vulkan', 'ImGui', 'Input', 'Audio', 'Ecs', 'Physics')) {
         $archive = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $packages "CrushKit.Brutal.$name.$version.nupkg"))
         try {
             $entries = @($archive.Entries.FullName)
@@ -26,22 +26,28 @@ try {
                 foreach ($file in @('LICENSE.txt', 'NOTICE.txt')) {
                     $entry = "notices/$component/$file"
                     # Project dependencies carry their own buildTransitive notice closure.
-                    if ($entry -notin $entries -and $name -in @('Input', 'Audio')) { throw "Missing dependency notice: $name/$entry" }
+                    if ($entry -notin $entries -and $name -in @('Input', 'Audio', 'Physics')) { throw "Missing dependency notice: $name/$entry" }
                 }
             }
         } finally { $archive.Dispose() }
     }
     # Fresh caches/lock files reject stale global-cache copies of unpublished previews.
-    foreach ($kind in @('renderer', 'mechanics')) {
+    foreach ($kind in @('renderer', 'mechanics', 'ecs', 'physics')) {
         $probe = Join-Path $root ".local/package-consumer-$kind"
         if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
         New-Item $probe -ItemType Directory -Force | Out-Null
         if ($kind -eq 'renderer') {
             Copy-Item samples/ShapeGallery/Program.cs,samples/ShapeGallery/sample.json $probe
             $references = "<PackageReference Include='CrushKit.Brutal.Vulkan' Version='$version' />"
-        } else {
+        } elseif ($kind -eq 'mechanics') {
             Copy-Item samples/InputAudio/Program.cs $probe
             $references = "<PackageReference Include='CrushKit.Brutal.Input' Version='$version' /><PackageReference Include='CrushKit.Brutal.Audio' Version='$version' />"
+        } elseif ($kind -eq 'ecs') {
+            Copy-Item samples/EcsJobs/Program.cs $probe
+            $references = "<PackageReference Include='CrushKit.Brutal.Ecs' Version='$version' />"
+        } else {
+            Copy-Item samples/PhysicsJobs/Program.cs $probe
+            $references = "<PackageReference Include='CrushKit.Brutal.Physics' Version='$version' />"
         }
         Copy-Item global.json $probe
         $project = Join-Path $probe 'PackageConsumer.csproj'
@@ -54,7 +60,7 @@ try {
         dotnet restore $project --locked-mode --packages $cache --configfile $config; Check-Exit "$kind locked restore"
         dotnet run --project $project -c $Configuration --no-restore; Check-Exit "$kind contract"
         $assets = Get-Content (Join-Path $probe 'obj/project.assets.json') -Raw | ConvertFrom-Json -AsHashtable
-        $forbidden = if ($kind -eq 'renderer') { '(?i)imgui|opengl|sdl\.mixer' } else { '(?i)vulkan|imgui|opengl|shaderc|breakout' }
+        $forbidden = if ($kind -eq 'renderer') { '(?i)imgui|opengl|sdl\.mixer' } elseif ($kind -eq 'mechanics') { '(?i)vulkan|imgui|opengl|shaderc|breakout' } elseif ($kind -eq 'ecs') { '(?i)vulkan|imgui|opengl|shaderc|breakout|ahwoo|glfw|sdl|box2d' } else { '(?i)vulkan|imgui|opengl|shaderc|breakout|glfw|sdl|^arch/' }
         if (@($assets.libraries.Keys | Where-Object { $_ -match $forbidden }).Count) { throw "$kind has unexpected dependencies." }
         $output = Join-Path $probe "bin/$Configuration/net10.0"
         if ($kind -eq 'renderer') {
@@ -65,15 +71,21 @@ try {
                 if ($TextFont) { $smokeArgs += @('--text-font', $TextFont) }
                 dotnet run --project $project -c $Configuration --no-build -- @smokeArgs; Check-Exit 'Hidden package-consumer smoke'
             }
-        } else {
+        } elseif ($kind -eq 'mechanics') {
             foreach ($file in @('CrushKit.Brutal.Input.dll', 'CrushKit.Brutal.Audio.dll', 'Licenses/CrushKit/Audio/Sdl.Mixer/NOTICE.txt', 'Licenses/CrushKit/Input/Glfw/LICENSE.txt')) { Assert-File $output $file }
             foreach ($pattern in @('*SDL3_mixer*.dll', '*glfw*.dll')) {
                 if (!(Get-ChildItem $output -Recurse -Filter $pattern)) { throw "Native runtime missing: $pattern" }
             }
         }
+        if ($kind -eq 'ecs') {
+            foreach ($file in @('CrushKit.Brutal.Ecs.dll', 'Arch.dll', 'Schedulers.dll', 'Licenses/CrushKit/Ecs/Arch/LICENSE.MD', 'Licenses/CrushKit/Ecs/Arch.LowLevel/LICENSE.MD', 'Licenses/CrushKit/Ecs/ZeroAllocJobScheduler/LICENSE.MD', 'Licenses/CrushKit/Ecs/ObjectPool/LICENSE.txt', 'Licenses/CrushKit/Ecs/Collections.Pooled/LICENSE.txt', 'Licenses/CrushKit/Ecs/CommunityToolkit.HighPerformance/License.md')) { Assert-File $output $file }
+        }
+        if ($kind -eq 'physics') {
+            foreach ($file in @('CrushKit.Brutal.Physics.dll', 'Brutal.Box2D.dll', 'Schedulers.dll', 'Licenses/CrushKit/Physics/Box2D/LICENSE.txt', 'Licenses/CrushKit/Physics/Box2D.Native/NOTICE.txt', 'Licenses/CrushKit/Physics/ZeroAllocJobScheduler/LICENSE.MD')) { Assert-File $output $file }
+        }
         $publish = Join-Path $probe 'publish'
         dotnet publish $project -c $Configuration --no-restore -o $publish; Check-Exit "$kind publish"
-        $notice = if ($kind -eq 'renderer') { 'Licenses/Media/Vulkan/LICENSE.txt' } else { 'Licenses/CrushKit/Audio/Sdl.Mixer/NOTICE.txt' }
+        $notice = if ($kind -eq 'renderer') { 'Licenses/Media/Vulkan/LICENSE.txt' } elseif ($kind -eq 'mechanics') { 'Licenses/CrushKit/Audio/Sdl.Mixer/NOTICE.txt' } elseif ($kind -eq 'ecs') { 'Licenses/CrushKit/Ecs/Arch/LICENSE.MD' } else { 'Licenses/CrushKit/Physics/ZeroAllocJobScheduler/LICENSE.MD' }
         Assert-File $publish $notice
         Write-Host "Package verification passed: $kind fresh consumer, native assets, notices and dependency isolation."
     }

@@ -30,6 +30,8 @@ public sealed class Box2DTaskScheduler : IDisposable
     private int nextWorkerIndex = -1;
     private long nextTaskId;
     private bool disposed;
+    private readonly Action<DispatchPoint>? dispatchHook;
+    internal enum DispatchPoint { AfterSchedule, AfterFlush }
 
     public int WorkerCount { get; }
 
@@ -37,8 +39,12 @@ public sealed class Box2DTaskScheduler : IDisposable
     internal int ObservedWorkerCount => Volatile.Read(ref nextWorkerIndex) + 1;
 
     /// <summary>Creates an explicit number of physics worker threads and one scheduling coordinator.</summary>
-    public unsafe Box2DTaskScheduler(int workerCount)
+    public Box2DTaskScheduler(int workerCount) : this(workerCount, null) { }
+
+    // Internal fault hook runs only at known dispatch boundaries, never inside scheduler internals.
+    internal unsafe Box2DTaskScheduler(int workerCount, Action<DispatchPoint>? dispatchHook)
     {
+        this.dispatchHook = dispatchHook;
         // Box2D 3.x uses fixed-size per-worker storage; keep indices within its 64-worker limit.
         if (workerCount is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(workerCount));
         WorkerCount = workerCount;
@@ -107,15 +113,30 @@ public sealed class Box2DTaskScheduler : IDisposable
             startup.SetResult();
             foreach (var task in requests.GetConsumingEnumerable())
             {
+                JobHandle handle;
+                try { handle = scheduler.Schedule(task, task.RangeCount); }
+                catch (Exception error)
+                {
+                    InfrastructureFailure("Schedule may have partially accepted native work before returning its handle.", error);
+                    throw;
+                }
+                bool flushed = false;
                 try
                 {
-                    var handle = scheduler.Schedule(task, task.RangeCount);
-                    scheduler.Flush();
+                    dispatchHook?.Invoke(DispatchPoint.AfterSchedule);
+                    FlushOrFail(scheduler);
+                    flushed = true;
+                    dispatchHook?.Invoke(DispatchPoint.AfterFlush);
                     task.Dispatched.SetResult(handle);
                 }
                 catch (Exception error)
                 {
                     Capture(error);
+                    // A hook failure leaves a known handle. Publish the failure only after that
+                    // handle is fully drained: returning null tells Box2D that no work is active.
+                    // FlushOrFail never returns after an actual Flush failure, so this is never a retry.
+                    if (!flushed) FlushOrFail(scheduler);
+                    CompleteOrFail(handle);
                     task.Dispatched.SetException(error);
                 }
             }
@@ -126,11 +147,10 @@ public sealed class Box2DTaskScheduler : IDisposable
         }
         catch (Exception error)
         {
+            if (startup.Task.IsCompletedSuccessfully)
+                InfrastructureFailure("Physics coordinator failed with accepted work of unknown completion state.", error);
             Capture(error);
             startup.TrySetException(error);
-            // Wake callers if startup/dispatch infrastructure fails rather than stranding them.
-            lock (gate)
-                foreach (var task in tasks.Values) task.Dispatched.TrySetException(error);
         }
         finally
         {
@@ -139,10 +159,35 @@ public sealed class Box2DTaskScheduler : IDisposable
         }
     }
 
+    private static void FlushOrFail(JobScheduler scheduler)
+    {
+        try { scheduler.Flush(); }
+        catch (Exception error)
+        {
+            // Flush enqueues one item at a time and only then clears its pending list. Retrying
+            // after failure could enqueue the same native task twice; waiting could strand a tail.
+            InfrastructureFailure("Physics Flush may have partially dispatched native work; it cannot safely be retried.", error);
+        }
+    }
+
+    private static void CompleteOrFail(JobHandle handle)
+    {
+        try { handle.Complete(); }
+        catch (Exception error)
+        {
+            InfrastructureFailure("Physics task completion failed; native task quiescence cannot be established.", error);
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+    private static void InfrastructureFailure(string message, Exception error) =>
+        Environment.FailFast(message, error);
+
     // Internal visibility lets tests call the exact reverse-P/Invoke entry points without a native world.
     internal unsafe void* Enqueue(nint taskPointer, int itemCount, int minRange, nint taskContext, nint userContext)
     {
         nint token = 0;
+        NativeTask? accepted = null;
         try
         {
             if (itemCount == 0) return null;
@@ -156,6 +201,7 @@ public sealed class Box2DTaskScheduler : IDisposable
                 token = checked((nint)(++nextTaskId));
                 tasks.Add(token, task);
                 requests.Add(task);
+                accepted = task;
             }
             // Only scheduling is marshalled; execution is asynchronous on the scheduler workers.
             task.Dispatched.Task.GetAwaiter().GetResult();
@@ -164,6 +210,7 @@ public sealed class Box2DTaskScheduler : IDisposable
         catch (Exception error)
         {
             Capture(error);
+            accepted?.Complete(); // No accepted native callback may outlive a null completion result.
             if (token != 0) lock (gate) tasks.Remove(token);
             return null;
         }
@@ -241,8 +288,18 @@ public sealed class Box2DTaskScheduler : IDisposable
         public void Finish() { }
         internal void Complete()
         {
-            try { Dispatched.Task.GetAwaiter().GetResult().Complete(); }
-            catch (Exception error) { owner.Capture(error); }
+            JobHandle handle;
+            try { handle = Dispatched.Task.GetAwaiter().GetResult(); }
+            catch (Exception error)
+            {
+                // Dispatch faults are published only after a known handle has drained. An
+                // interrupted wait is not evidence of quiescence and cannot be treated that way.
+                if (!Dispatched.Task.IsFaulted)
+                    InfrastructureFailure("Physics dispatch wait failed before completion was established.", error);
+                owner.Capture(error);
+                return;
+            }
+            CompleteOrFail(handle);
         }
     }
 }

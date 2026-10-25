@@ -1,0 +1,7 @@
+ZeroAllocJobScheduler 1.1.2 (author: genaray) declares Apache-2.0 in its published
+NuGet archive, but the archive does not embed the licence text. LICENSE.MD is
+copied verbatim from the repository commit recorded in its published nuspec:
+https://github.com/genaray/ZeroAllocJobScheduler/blob/84e28b9116651e37ab26d72041b8f35765c21a8e/LICENSE.MD
+No NOTICE file exists in that pinned repository root.
+BRUTAL dependency notice files are copied from the pinned published NuGet archives.
+This is notice propagation, not a licence grant for CrushKit or release clearance.

@@ -1,0 +1,19 @@
+Dependency notice provenance (not a source licence grant for CrushKit)
+
+Arch 2.1.0, Arch.LowLevel 1.1.5, ZeroAllocJobScheduler 1.1.2:
+Published NuGet archives declare Apache-2.0 but do not embed its text.
+LICENSE.MD files copied verbatim from the repository commits recorded by those nuspecs:
+https://github.com/genaray/Arch/blob/04d52e7268eb6f376ca4841a0c204334120c5e9d/LICENSE.MD
+https://github.com/genaray/Arch.Extended/blob/bf59a7af98f43cc6f14506721d71ee4ea803383c/LICENSE.MD
+https://github.com/genaray/ZeroAllocJobScheduler/blob/84e28b9116651e37ab26d72041b8f35765c21a8e/LICENSE.MD
+Author: genaray. No NOTICE file exists in those pinned repository roots.
+
+Microsoft.Extensions.ObjectPool 7.0.0 declares MIT in its nuspec.
+ObjectPool/LICENSE.txt copied verbatim from its nuspec source commit:
+https://github.com/dotnet/aspnetcore/blob/bb01bbf4433e27289b99001b7de6a582879d1835/LICENSE.txt
+Its THIRD-PARTY-NOTICES.TXT is copied directly from the NuGet archive during build/pack.
+
+Collections.Pooled 2.0.0-preview.27 LICENSE.txt and CommunityToolkit.HighPerformance
+8.2.2 License.md/ThirdPartyNotices.txt are copied from the published NuGet archives.
+System.Runtime.CompilerServices.Unsafe is supplied by net10.0, not a resolved package.
+All published packages were restored from https://api.nuget.org/v3/index.json.

@@ -13,8 +13,10 @@ A small, composable C# game kit built on published BRUTAL packages. This is the 
 | `CrushKit.Brutal.ImGui` | Optional read-only inspector, supplied explicitly by the application |
 | `CrushKit.Brutal.Input` | Binding-neutral GLFW samples, pad selection, aggregate edges and radial direction helpers |
 | `CrushKit.Brutal.Audio` | Generic clip/SDL.Mixer ownership, silent fallback and first-idle/drop-new bounded voices |
+| `CrushKit.Brutal.Ecs` | Arch world lifetime, worker jobs with explicit dependencies, queued submissions and awaitable completion |
+| `CrushKit.Brutal.Physics` | Box2D native task scheduling and guarded global world creation/destruction |
 
-Vulkan depends on Draw2D, not ImGui. ImGui depends on Vulkan. None depends on Breakout, its simulation, settings JSON or assets. All modules currently share version `0.1.0-preview.2`; there is no umbrella package. Input and Audio depend on neither graphics nor one another. Bindings, aim priority, cue names/event mapping, focus/pause policy and simulation remain application-owned. See [input/audio usage and binding constraints](docs/input-audio.md).
+Vulkan depends on Draw2D, not ImGui. ImGui depends on Vulkan. None depends on Breakout, its simulation, settings JSON or assets. All modules currently share version `0.1.0-preview.3`; there is no umbrella package. Input and Audio depend on neither graphics nor one another. Bindings, aim priority, cue names/event mapping, focus/pause policy and simulation remain application-owned. Ecs owns generic world/job plumbing, not game components or physics policy; see [Arch hosting and threading constraints](docs/ecs.md). Physics provides the independent [Box2D task bridge](docs/physics-jobs.md), without an Arch dependency. See [input/audio usage and binding constraints](docs/input-audio.md).
 
 The renderer's optional inspector seam is intentionally kit-internal, not a public arbitrary render-plugin API. The provided `ImGuiInspector` transfers ownership to the renderer when passed to `ConfigureOverlay`; it retires at the shared fence/device-idle boundaries. Overlay label content, diagnostic state/detail strings, layout settings, fonts and images are supplied by the application. The kit ships no game fonts, media or default configuration.
 
@@ -45,6 +47,8 @@ dotnet test tests/Draw2D/Draw2D.Tests.csproj --no-restore
 dotnet test tests/Vulkan/Vulkan.Tests.csproj --no-restore
 dotnet test tests/Input/Input.Tests.csproj --no-restore
 dotnet test tests/Audio/Audio.Tests.csproj --no-restore
+dotnet test tests/Ecs/Ecs.Tests.csproj --no-restore
+dotnet test tests/Physics/Physics.Tests.csproj --no-restore
 pwsh -NoProfile -File tools/pack-local.ps1
 ```
 
@@ -56,13 +60,15 @@ A game references only the modules it needs:
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="CrushKit.Brutal.Draw2D" Version="0.1.0-preview.2" />
-  <PackageReference Include="CrushKit.Brutal.Vulkan" Version="0.1.0-preview.2" />
+  <PackageReference Include="CrushKit.Brutal.Draw2D" Version="0.1.0-preview.3" />
+  <PackageReference Include="CrushKit.Brutal.Vulkan" Version="0.1.0-preview.3" />
   <!-- Optional inspector: -->
-  <PackageReference Include="CrushKit.Brutal.ImGui" Version="0.1.0-preview.2" />
+  <PackageReference Include="CrushKit.Brutal.ImGui" Version="0.1.0-preview.3" />
   <!-- Independent mechanics, if needed: -->
-  <PackageReference Include="CrushKit.Brutal.Input" Version="0.1.0-preview.2" />
-  <PackageReference Include="CrushKit.Brutal.Audio" Version="0.1.0-preview.2" />
+  <PackageReference Include="CrushKit.Brutal.Input" Version="0.1.0-preview.3" />
+  <PackageReference Include="CrushKit.Brutal.Audio" Version="0.1.0-preview.3" />
+  <PackageReference Include="CrushKit.Brutal.Ecs" Version="0.1.0-preview.3" />
+  <PackageReference Include="CrushKit.Brutal.Physics" Version="0.1.0-preview.3" />
 </ItemGroup>
 ```
 
@@ -79,13 +85,17 @@ dotnet run --project samples/ShapeGallery
 dotnet run --project samples/ShapeGallery -- --show
 # Independent headless input/audio example (no device or window):
 dotnet run --project samples/InputAudio
+# Independent managed Arch/job concurrency example (no native dependencies):
+dotnet run --project samples/EcsJobs
+# Independent native collision/worker-task example (no graphics or Arch):
+dotnet run --project samples/PhysicsJobs
 # Fresh real-package consumers, native assets, notices, shader resources and publish output:
 pwsh -NoProfile -File tools/verify-packages.ps1
 # Also bounded hidden Vulkan presentation/resize with validation layers:
 pwsh -NoProfile -File tools/verify-packages.ps1 -HiddenSmoke
 ```
 
-The sample normally uses project references. The verifier creates independent renderer and input/audio applications under ignored `.local/package-consumer-*/`, references real packed packages, restores into isolated caches, checks unwanted dependencies are absent, executes CPU/resource contracts, checks native/notice propagation and publishes locally. `-HiddenSmoke` additionally presents shapes and resizes a hidden GLFW window. With `-HiddenSmoke -TextFont <application-supplied-ttf>`, it also verifies direct text rendering without any inspector package/assets. It does not establish visible image quality, minimize/restore, text/font DPI fidelity, audible output, controller input or other-platform acceptance.
+The sample normally uses project references. The verifier creates independent renderer, input/audio, ECS/job and physics/job applications under ignored `.local/package-consumer-*/`, references real packed packages, restores into isolated caches, checks unwanted dependencies are absent, executes CPU/resource contracts, checks native/notice propagation and publishes locally. `-HiddenSmoke` additionally presents shapes and resizes a hidden GLFW window. With `-HiddenSmoke -TextFont <application-supplied-ttf>`, it also verifies direct text rendering without any inspector package/assets. It does not establish visible image quality, minimize/restore, text/font DPI fidelity, audible output, controller input or other-platform acceptance.
 
 Breakout retains game integration tests and its hidden overlay/gameplay harness; the headless geometry and GPU ABI/upload tests live here.
 

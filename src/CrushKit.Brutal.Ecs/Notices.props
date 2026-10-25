@@ -1,0 +1,10 @@
+<Project>
+  <ItemGroup>
+    <None Remove="ThirdParty/**/*" />
+    <None Include="ThirdParty/**/*" Link="Licenses/CrushKit/Ecs/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="$(NuGetPackageRoot)collections.pooled/2.0.0-preview.27/LICENSE.txt" Link="Licenses/CrushKit/Ecs/Collections.Pooled/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/Collections.Pooled/%(Filename)%(Extension)" />
+    <None Include="$(NuGetPackageRoot)communitytoolkit.highperformance/8.2.2/License.md;$(NuGetPackageRoot)communitytoolkit.highperformance/8.2.2/ThirdPartyNotices.txt" Link="Licenses/CrushKit/Ecs/CommunityToolkit.HighPerformance/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/CommunityToolkit.HighPerformance/%(Filename)%(Extension)" />
+    <None Include="$(NuGetPackageRoot)microsoft.extensions.objectpool/7.0.0/THIRD-PARTY-NOTICES.TXT" Link="Licenses/CrushKit/Ecs/ObjectPool/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="true" PackagePath="notices/ObjectPool/%(Filename)%(Extension)" />
+    <None Include="CrushKit.Brutal.Ecs.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+</Project>
