@@ -217,6 +217,109 @@ public sealed class InspectorControlsTests
     }
 
     [Fact]
+    public void CollapsedTitlebarCanStayNearBottomAcrossFramesAndRetirementThenExpandSafely()
+    {
+        var previous = Ui.GetCurrentContext();
+        using var inspector = new ImGuiInspector(Settings());
+        Field("_hasDiagnosticsBounds").SetValue(inspector, true);
+        Field("_diagnosticsPosition").SetValue(inspector, new float2(100, 16));
+        Field("_diagnosticsSize").SetValue(inspector, new float2(440, 480));
+        try
+        {
+            AttachCpuFrame(inspector);
+            Ui.GetIO().DisplaySize = new float2(960, 540);
+            BeginDiagnostics(inspector); Invoke(inspector, "EndDiagnostics");
+            NextCpuFrame();
+            Ui.SetNextWindowCollapsed(true);
+            BeginDiagnostics(inspector);
+            Ui.SetWindowPos(new float2(100, 500)); // CPU analogue of dragging the collapsed titlebar.
+            Invoke(inspector, "EndDiagnostics");
+            for (int frame = 0; frame < 3; frame++)
+            {
+                NextCpuFrame(); BeginDiagnostics(inspector);
+                Assert.True(Ui.IsWindowCollapsed());
+                Assert.Equal(500, Ui.GetWindowPos().Y);
+                Assert.Equal(new float2(440, 480), Field("_diagnosticsSize").GetValue(inspector));
+                Invoke(inspector, "EndDiagnostics");
+            }
+            Invoke(inspector, "Cancel"); Invoke(inspector, "Release");
+            AttachCpuFrame(inspector);
+            Ui.GetIO().DisplaySize = new float2(960, 540);
+            BeginDiagnostics(inspector);
+            Assert.True(Ui.IsWindowCollapsed()); Assert.Equal(500, Ui.GetWindowPos().Y);
+            Invoke(inspector, "EndDiagnostics");
+            NextCpuFrame(); Ui.SetNextWindowCollapsed(false);
+            BeginDiagnostics(inspector);
+            Assert.False(Ui.IsWindowCollapsed());
+            AssertBounds(100, 60, 440, 480);
+            Invoke(inspector, "EndDiagnostics");
+        }
+        finally { inspector.Dispose(); Ui.SetCurrentContext(previous); }
+    }
+
+    [Fact]
+    public void PreviewReservesStableExtentWhenScrolledOutWithoutUploading()
+    {
+        var previous = Ui.GetCurrentContext();
+        var settings = Settings();
+        typeof(InspectorSettings).GetField("<ImageSize>k__BackingField", PrivateInstance)!.SetValue(settings, 256f);
+        using var inspector = new ImGuiInspector(settings);
+        Field("_hasDiagnosticsBounds").SetValue(inspector, true);
+        Field("_diagnosticsPosition").SetValue(inspector, new float2(100, 16));
+        Field("_diagnosticsSize").SetValue(inspector, new float2(440, 480));
+        var pixels = global::Brutal.TextureApi.Abstractions.GenericTexture.Defaults.RGBA8UNorm(new int2(2, 2));
+        pixels.Data.Fill(255); Field("_previewPixels").SetValue(inspector, pixels);
+        try
+        {
+            AttachCpuFrame(inspector);
+            Ui.GetStyle().FontSizeBase = 22;
+            Ui.GetIO().DisplaySize = new float2(960, 540);
+            float? stableEnd = null, stableRange = null, stableHeight = null;
+            int clippedFrames = 0, shownFrames = 0;
+            for (int frame = 0; frame < 10; frame++)
+            {
+                NextCpuFrame(); BeginDiagnostics(inspector);
+                typeof(ImGuiInspector).GetMethod("DrawOverview", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null,
+                    [new CrushKit.Brutal.Vulkan.OverlayDiagnostics("Ready", "Inspector preview", 16.67, 1, 2, 3)]);
+                Assert.True(Section("Preview", true));
+                bool clipped = Ui.GetScrollY() > 400;
+                // Visible frames use a CPU texture stand-in; clipped frames have no texture/renderer.
+                Field("_hasPreviewReference").SetValue(inspector, !clipped);
+                Field("_recordedImage").SetValue(inspector, false);
+                typeof(ImGuiInspector).GetMethod("DrawPreview", PrivateInstance)!.Invoke(inspector, [null]);
+                float height = Ui.GetItemRectSize().Y;
+                if (clipped)
+                {
+                    clippedFrames++;
+                    Assert.False((bool)Field("_recordedImage").GetValue(inspector)!);
+                }
+                else
+                {
+                    shownFrames++;
+                    Assert.True((bool)Field("_recordedImage").GetValue(inspector)!);
+                }
+                Ui.Dummy(new float2(1, 800)); // Expanded technical sections below the preview.
+                float end = Ui.GetCursorPos().Y, range = Ui.GetScrollMaxY();
+                if (frame == 2) { stableEnd = end; stableRange = range; stableHeight = height; }
+                if (frame > 2)
+                {
+                    Assert.Equal(stableEnd!.Value, end, 2);
+                    Assert.Equal(stableRange!.Value, range, 2);
+                    Assert.Equal(stableHeight!.Value, height, 2);
+                }
+                Ui.SetScrollY(frame >= 2 && frame < 7 ? 450 : 0);
+                Invoke(inspector, "EndDiagnostics");
+            }
+            Assert.True(clippedFrames >= 3); Assert.True(shownFrames >= 3);
+        }
+        finally
+        {
+            Field("_hasPreviewReference").SetValue(inspector, false);
+            inspector.Dispose(); Ui.SetCurrentContext(previous);
+        }
+    }
+
+    [Fact]
     public void ThrowingRowFormattingStillBalancesTableAndWindowScopes()
     {
         var previous = Ui.GetCurrentContext();

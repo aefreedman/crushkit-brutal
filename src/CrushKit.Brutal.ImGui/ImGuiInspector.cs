@@ -122,8 +122,10 @@ public sealed class ImGuiInspector : VulkanInspector
         }
         var display = io.DisplaySize;
         var size = new float2(Math.Min(_diagnosticsSize.X / scale.X, display.X), Math.Min(_diagnosticsSize.Y / scale.Y, display.Y));
+        // A collapsed window occupies only its titlebar, not its retained expanded body.
+        float visibleHeight = _diagnosticsCollapsed ? Ui.GetFrameHeight() : size.Y;
         var position = new float2(Math.Clamp(_diagnosticsPosition.X / scale.X, 0, Math.Max(0, display.X - size.X)),
-            Math.Clamp(_diagnosticsPosition.Y / scale.Y, 0, Math.Max(0, display.Y - size.Y)));
+            Math.Clamp(_diagnosticsPosition.Y / scale.Y, 0, Math.Max(0, display.Y - visibleHeight)));
         bool scaleChanged = scale.X != _lastScale.X || scale.Y != _lastScale.Y;
         if (_restoreDiagnostics || scaleChanged || Math.Abs(size.X * scale.X - _diagnosticsSize.X) > 0.01f || Math.Abs(size.Y * scale.Y - _diagnosticsSize.Y) > 0.01f)
             Ui.SetNextWindowSize(size, ImGuiCond.Always);
@@ -132,7 +134,15 @@ public sealed class ImGuiInspector : VulkanInspector
         _diagnosticsSize = new(size.X * scale.X, size.Y * scale.Y);
         if (_restoreDiagnostics) Ui.SetNextWindowCollapsed(_diagnosticsCollapsed, ImGuiCond.Always);
         _restoreDiagnostics = false; _lastScale = scale;
-        return Ui.Begin("Diagnostics (read only)"u8, ImGuiWindowFlags.NoSavedSettings);
+        bool expanded = Ui.Begin("Diagnostics (read only)"u8, ImGuiWindowFlags.NoSavedSettings);
+        if (expanded && _diagnosticsCollapsed)
+        {
+            // Expansion happens inside Begin: recover the body immediately, not one frame later.
+            var actualPosition = Ui.GetWindowPos(); var actualSize = Ui.GetWindowSize();
+            Ui.SetWindowPos(new float2(Math.Clamp(actualPosition.X, 0, Math.Max(0, display.X - actualSize.X)),
+                Math.Clamp(actualPosition.Y, 0, Math.Max(0, display.Y - actualSize.Y))));
+        }
+        return expanded;
     }
 
     private void EndDiagnostics()
@@ -183,7 +193,12 @@ public sealed class ImGuiInspector : VulkanInspector
         if (factor <= 0 || !OverlayPixels.HasCoverage(_previewPixels!)) return;
         var imageSize = new float2(Settings.ImageSize * factor / scale.X, Settings.ImageSize * factor / scale.Y);
         var min = Ui.GetCursorScreenPos();
-        if (!Ui.IsRectVisible(imageSize) || !Visible(min, min + imageSize, io.DisplaySize)) return;
+        if (!Ui.IsRectVisible(imageSize) || !Visible(min, min + imageSize, io.DisplaySize))
+        {
+            // Clipping must not remove the widget's layout extent (and change the scroll range).
+            Ui.Dummy(imageSize);
+            return;
+        }
         if (!_hasPreviewReference)
         {
             _previewGpu = renderer.UploadOverlayTexture(_previewPixels!, gameDescriptor: false);
