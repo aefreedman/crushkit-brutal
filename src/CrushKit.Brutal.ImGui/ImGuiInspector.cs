@@ -13,6 +13,9 @@ namespace CrushKit.Brutal.ImGui;
 /// <summary>Optional read-only inspector. Content is supplied by the application, not inferred from game state.</summary>
 public sealed class ImGuiInspector : VulkanInspector
 {
+    public InspectorSettings Settings { get; }
+    public ImGuiInspector(InspectorSettings settings) => Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+    internal override bool InitiallyVisible => Settings.Visible;
     private ImGuiContextPtr _uiContext;
     private ImFontPtr _inspectorFont;
     private bool _hasUiContext, _uiFrame;
@@ -24,18 +27,18 @@ public sealed class ImGuiInspector : VulkanInspector
     private bool _hasPreviewReference, _recordedImage, _recordedInspector;
     private VulkanRenderer? _renderer;
 
-    internal override OverlayCapture BeginFrame(VulkanRenderer renderer, OverlaySettings settings)
+    internal override OverlayCapture BeginFrame(VulkanRenderer renderer)
     {
         _renderer = renderer;
-        ResourceLifetime.OnFailure(() => Ensure(renderer, settings), Release);
+        ResourceLifetime.OnFailure(() => Ensure(renderer, Settings), Release);
         Ui.SetCurrentContext(_uiContext);
         _uiRenderer!.NewFrame(); _uiPlatform!.NewFrame();
-        Ui.GetStyle().FontSizeBase = InspectorFont.LogicalSize(settings.FontSize, Ui.GetIO().DisplayFramebufferScale);
+        Ui.GetStyle().FontSizeBase = InspectorFont.LogicalSize(Settings.FontSize, Ui.GetIO().DisplayFramebufferScale);
         Ui.NewFrame(); _uiFrame = true;
         return new(Ui.GetIO().WantCaptureMouse, Ui.GetIO().WantCaptureKeyboard, false);
     }
 
-    private void Ensure(VulkanRenderer renderer, OverlaySettings s)
+    private void Ensure(VulkanRenderer renderer, InspectorSettings s)
     {
         _debugPixels ??= OverlayPixels.LoadPng(s.ImagePath, s.MaxTextureDimension, s.MaxEncodedImageBytes);
         _previewPixels ??= OverlayPixels.CreateInspectorPreview(_debugPixels);
@@ -46,7 +49,7 @@ public sealed class ImGuiInspector : VulkanInspector
             _hasUiContext = true;
             var io = Ui.GetIO(); io.IniFilename = default; io.LogFilename = default;
             io.ConfigFlags |= ImGuiConfigFlags.NoMouseCursorChange;
-            _inspectorFont = InspectorFont.Load(io, s.DebugFontPath, s.FontSize);
+            _inspectorFont = InspectorFont.Load(io, s.FontPath, s.FontSize);
             _uiPlatform = new GlfwBackend(renderer._window, GlfwBackend.ClientApi.Vulkan);
         }
         Ui.SetCurrentContext(_uiContext);
@@ -58,20 +61,20 @@ public sealed class ImGuiInspector : VulkanInspector
         });
     }
 
-    internal override InspectorEvidence Prepare(VulkanRenderer renderer, OverlaySettings settings, OverlayFrame frame, OverlayText text)
+    internal override InspectorEvidence Prepare(VulkanRenderer renderer, OverlayFrame frame, OverlayText text)
     {
         _recordedImage = _recordedInspector = false;
         Ui.SetCurrentContext(_uiContext);
-        var s = settings; var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
+        var s = Settings; var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
         // Inspector settings are also physical pixels; convert only at the local ImGui boundary.
-        Ui.SetNextWindowPos(new float2(s.DebugLeft / scale.X, s.DebugTop / scale.Y), ImGuiCond.Always);
-        Ui.SetNextWindowSize(new float2(s.DebugWidth / scale.X, s.DebugHeight / scale.Y), ImGuiCond.Always);
+        Ui.SetNextWindowPos(new float2(s.Left / scale.X, s.Top / scale.Y), ImGuiCond.Always);
+        Ui.SetNextWindowSize(new float2(s.Width / scale.X, s.Height / scale.Y), ImGuiCond.Always);
         if (Ui.Begin("Diagnostics (read only)"u8, ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove))
         {
             var d = frame.Diagnostics;
             Ui.Text(Encoding.UTF8.GetBytes($"{d.State}\n{d.Detail}\nFrame {d.FrameMilliseconds:F2} ms\nShape frames {d.PresentedShapeFrames}\nVertices {d.ShapeVertices}  Indices {d.ShapeIndices}\nOverlay frames {renderer.OverlayEvidence.PresentedFrames}\nText cache {text.Count}, rasterizations {text.Rasterizations}, hits {text.CacheHits}\nInspector TTF {_inspectorFont.GetDebugName()}\nFont {Ui.GetFontSize():F2} logical / {Ui.GetFontSize() * scale.Y:F2} physical px\nFramebuffer scale {scale.X:F2} x {scale.Y:F2}, raster density {Ui.GetFontBaked().RasterizerDensity:F2}\nF1 closes this inspector"));
             var min = Ui.GetCursorScreenPos(); var available = Ui.GetContentRegionAvail();
-            var imageSize = new float2(s.DebugImageSize / scale.X, s.DebugImageSize / scale.Y);
+            var imageSize = new float2(s.ImageSize / scale.X, s.ImageSize / scale.Y);
             if (OverlayPixels.HasCoverage(_previewPixels!) && available.X > 0 && available.Y > 0 && Visible(min, min + imageSize, io.DisplaySize))
             {
                 if (!_hasPreviewReference)

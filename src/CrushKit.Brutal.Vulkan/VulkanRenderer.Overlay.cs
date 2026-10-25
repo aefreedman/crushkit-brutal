@@ -38,7 +38,7 @@ public sealed unsafe partial class VulkanRenderer
         CancelOverlayFrame();
         var settings = _overlaySettings ?? throw new InvalidOperationException("Configure overlay first.");
         if (!settings.Enabled) return _captureTracker.Update(false, false, false);
-        _inspectorVisible = inspectorVisible ?? settings.DebugVisible;
+        _inspectorVisible = inspectorVisible ?? _inspector?.InitiallyVisible ?? false;
         if (!_inspectorVisible && _inspectorActive)
         {
             // Remove callbacks/context immediately on close, even if minimized, after their last GPU use.
@@ -52,7 +52,7 @@ public sealed unsafe partial class VulkanRenderer
         OverlayCapture capture = default;
         if (_inspectorVisible && _inspector != null)
         {
-            capture = _inspector.BeginFrame(this, settings);
+            capture = _inspector.BeginFrame(this);
             _inspectorActive = _uiFrame = true;
         }
         _overlayActiveFrame = true;
@@ -118,7 +118,7 @@ public sealed unsafe partial class VulkanRenderer
         UploadBuffer(ref _overlayIndices, _overlayBatch.Indices, VkBufferUsageFlags.IndexBufferBit);
         if (_uiFrame)
         {
-            var evidence = _inspector!.Prepare(this, s, _overlayFrame, _overlayText!);
+            var evidence = _inspector!.Prepare(this, _overlayFrame, _overlayText!);
             _recordedUiIndices = evidence.Indices; _recordedImage = evidence.Image; _recordedInspector = evidence.Window;
             _uiFrame = false;
         }

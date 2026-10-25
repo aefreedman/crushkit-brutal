@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.BRUTAL.Sdl.Mixer" Version="[2026.10.3]" />
+    <InternalsVisibleTo Include="Audio.Tests" />
+  </ItemGroup>
+  <Import Project="Notices.props" />
+</Project>

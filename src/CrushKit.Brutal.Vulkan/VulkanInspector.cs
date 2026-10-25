@@ -9,8 +9,9 @@ namespace CrushKit.Brutal.Vulkan;
 public abstract class VulkanInspector : IDisposable
 {
     internal VulkanInspector() { }
-    internal abstract OverlayCapture BeginFrame(VulkanRenderer renderer, OverlaySettings settings);
-    internal abstract InspectorEvidence Prepare(VulkanRenderer renderer, OverlaySettings settings, OverlayFrame frame, OverlayText text);
+    internal abstract bool InitiallyVisible { get; }
+    internal abstract OverlayCapture BeginFrame(VulkanRenderer renderer);
+    internal abstract InspectorEvidence Prepare(VulkanRenderer renderer, OverlayFrame frame, OverlayText text);
     internal abstract void Record(VulkanRenderer renderer);
     internal abstract void Cancel();
     internal abstract void Release();

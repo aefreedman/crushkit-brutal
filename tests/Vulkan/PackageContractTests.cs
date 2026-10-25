@@ -21,7 +21,7 @@ public sealed class PackageContractTests
         // Constructor only: no native initialization, window, device or GPU call.
         using var renderer = (VulkanRenderer)Activator.CreateInstance(typeof(VulkanRenderer),
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
-            null, new object[] { default(global::Brutal.GlfwApi.GlfwWindow) }, null)!;
+            null, new object[] { default(global::Brutal.GlfwApi.GlfwWindow)! }, null)!;
         var events = new List<string>();
         var inspector = new FakeInspector(events);
         typeof(VulkanRenderer).GetField("_inspector", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(renderer, inspector);
@@ -31,8 +31,9 @@ public sealed class PackageContractTests
 
     private sealed class FakeInspector(List<string> events) : VulkanInspector
     {
-        internal override OverlayCapture BeginFrame(VulkanRenderer renderer, OverlaySettings settings) => default;
-        internal override InspectorEvidence Prepare(VulkanRenderer renderer, OverlaySettings settings, OverlayFrame frame, OverlayText text) => default;
+        internal override bool InitiallyVisible => false;
+        internal override OverlayCapture BeginFrame(VulkanRenderer renderer) => default;
+        internal override InspectorEvidence Prepare(VulkanRenderer renderer, OverlayFrame frame, OverlayText text) => default;
         internal override void Record(VulkanRenderer renderer) { }
         internal override void Cancel() { }
         internal override void Release() => events.Add("release");

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.BRUTAL.Glfw" Version="[2026.10.5]" />
+    <PackageReference Include="Ahwoo.BRUTAL.Numerics" Version="[2026.10.2]" />
+  </ItemGroup>
+  <Import Project="Notices.props" />
+</Project>

@@ -7,7 +7,7 @@
     <ProjectReference Include="../../src/CrushKit.Brutal.Vulkan/CrushKit.Brutal.Vulkan.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseCrushKitPackages)' == 'true'">
-    <PackageReference Include="CrushKit.Brutal.Vulkan" Version="0.1.0-preview.1" />
+    <PackageReference Include="CrushKit.Brutal.Vulkan" Version="$(Version)" />
   </ItemGroup>
   <ItemGroup><None Update="sample.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>
