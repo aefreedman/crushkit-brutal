@@ -40,6 +40,10 @@ public sealed class ImGuiInspector : VulkanInspector
     private ImTextureRef _previewReference;
     private bool _hasPreviewReference, _recordedImage, _recordedInspector;
     private VulkanRenderer? _renderer;
+    // Physical-pixel session state survives context retirement; never written to an ini file.
+    private float2 _diagnosticsPosition, _diagnosticsSize, _lastScale;
+    private bool _hasDiagnosticsBounds, _restoreDiagnostics = true, _diagnosticsCollapsed;
+    private bool _previewOpen = true, _renderingOpen, _textOpen, _fontOpen;
 
     internal override OverlayCapture BeginFrame(VulkanRenderer renderer)
     {
@@ -80,32 +84,115 @@ public sealed class ImGuiInspector : VulkanInspector
     {
         _recordedImage = _recordedInspector = false;
         Ui.SetCurrentContext(_uiContext);
-        var s = Settings; var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
-        // Inspector settings are also physical pixels; convert only at the local ImGui boundary.
-        Ui.SetNextWindowPos(new float2(s.Left / scale.X, s.Top / scale.Y), ImGuiCond.Always);
-        Ui.SetNextWindowSize(new float2(s.Width / scale.X, s.Height / scale.Y), ImGuiCond.Always);
-        if (Ui.Begin("Diagnostics (read only)"u8, ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove))
+        var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
+        bool expanded = BeginDiagnostics();
+        try
         {
-            var d = frame.Diagnostics;
-            Ui.Text(Encoding.UTF8.GetBytes($"{d.State}\n{d.Detail}\nFrame {d.FrameMilliseconds:F2} ms\nShape frames {d.PresentedShapeFrames}\nVertices {d.ShapeVertices}  Indices {d.ShapeIndices}\nOverlay frames {renderer.OverlayEvidence.PresentedFrames}\nText cache {text.Count}, rasterizations {text.Rasterizations}, hits {text.CacheHits}\nInspector TTF {_inspectorFont.GetDebugName()}\nFont {Ui.GetFontSize():F2} logical / {Ui.GetFontSize() * scale.Y:F2} physical px\nFramebuffer scale {scale.X:F2} x {scale.Y:F2}, raster density {Ui.GetFontBaked().RasterizerDensity:F2}\nF1 closes this inspector"));
-            var min = Ui.GetCursorScreenPos(); var available = Ui.GetContentRegionAvail();
-            var imageSize = new float2(s.ImageSize / scale.X, s.ImageSize / scale.Y);
-            if (OverlayPixels.HasCoverage(_previewPixels!) && available.X > 0 && available.Y > 0 && Visible(min, min + imageSize, io.DisplaySize))
+            if (expanded)
             {
-                if (!_hasPreviewReference)
-                {
-                    _previewGpu = renderer.UploadOverlayTexture(_previewPixels!, gameDescriptor: false);
-                    _previewReference = _uiRenderer!.AddTexture(renderer._overlaySampler, _previewGpu.View.VkImageView, VkImageLayout.ShaderReadOnlyOptimal);
-                    _hasPreviewReference = true;
-                }
-                var drawList = Ui.GetWindowDrawList(); int before = drawList.IdxBuffer.Count;
-                Ui.Image(_previewReference, imageSize);
-                _recordedImage = drawList.IdxBuffer.Count > before; // Actual image indices, not just a requested widget.
+                DrawOverview(frame.Diagnostics);
+                if (Section("Preview", ref _previewOpen)) DrawPreview(renderer);
+                if (Section("Rendering", ref _renderingOpen))
+                    Rows("rendering", ("Shape frames", $"{frame.Diagnostics.PresentedShapeFrames}"),
+                        ("Vertices", $"{frame.Diagnostics.ShapeVertices}"), ("Indices", $"{frame.Diagnostics.ShapeIndices}"),
+                        ("Overlay frames", $"{renderer.OverlayEvidence.PresentedFrames}"));
+                if (Section("Text cache", ref _textOpen))
+                    Rows("text", ("Entries", $"{text.Count}"), ("Rasterizations", $"{text.Rasterizations}"), ("Hits", $"{text.CacheHits}"));
+                if (Section("Font", ref _fontOpen))
+                    Rows("font", ("Inspector TTF", $"{_inspectorFont.GetDebugName()}"),
+                        ("Logical px", $"{Ui.GetFontSize():F2}"), ("Physical px", $"{Ui.GetFontSize() * scale.Y:F2}"),
+                        ("Framebuffer scale", $"{scale.X:F2} x {scale.Y:F2}"), ("Raster density", $"{Ui.GetFontBaked().RasterizerDensity:F2}"));
+                Ui.TextWrapped("Drag title bar to move; resize from edges."u8);
+                _recordedInspector = Visible(Ui.GetWindowPos(), Ui.GetWindowPos() + Ui.GetWindowSize(), io.DisplaySize);
             }
-            _recordedInspector = Visible(Ui.GetWindowPos(), Ui.GetWindowPos() + Ui.GetWindowSize(), io.DisplaySize);
         }
-        Ui.End(); Ui.Render(); _uiFrame = false;
+        finally { EndDiagnostics(); }
+        Ui.Render(); _uiFrame = false;
         return new(Ui.GetDrawData().TotalIdxCount, _recordedImage, _recordedInspector);
+    }
+
+    private bool BeginDiagnostics()
+    {
+        var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
+        if (!_hasDiagnosticsBounds)
+        {
+            _diagnosticsPosition = new(Settings.Left, Settings.Top);
+            _diagnosticsSize = new(Settings.Width, Settings.Height);
+            _hasDiagnosticsBounds = true;
+        }
+        var display = io.DisplaySize;
+        var size = new float2(Math.Min(_diagnosticsSize.X / scale.X, display.X), Math.Min(_diagnosticsSize.Y / scale.Y, display.Y));
+        var position = new float2(Math.Clamp(_diagnosticsPosition.X / scale.X, 0, Math.Max(0, display.X - size.X)),
+            Math.Clamp(_diagnosticsPosition.Y / scale.Y, 0, Math.Max(0, display.Y - size.Y)));
+        bool scaleChanged = scale.X != _lastScale.X || scale.Y != _lastScale.Y;
+        if (_restoreDiagnostics || scaleChanged || Math.Abs(size.X * scale.X - _diagnosticsSize.X) > 0.01f || Math.Abs(size.Y * scale.Y - _diagnosticsSize.Y) > 0.01f)
+            Ui.SetNextWindowSize(size, ImGuiCond.Always);
+        if (_restoreDiagnostics || scaleChanged || Math.Abs(position.X * scale.X - _diagnosticsPosition.X) > 0.01f || Math.Abs(position.Y * scale.Y - _diagnosticsPosition.Y) > 0.01f)
+            Ui.SetNextWindowPos(position, ImGuiCond.Always);
+        _diagnosticsSize = new(size.X * scale.X, size.Y * scale.Y);
+        if (_restoreDiagnostics) Ui.SetNextWindowCollapsed(_diagnosticsCollapsed, ImGuiCond.Always);
+        _restoreDiagnostics = false; _lastScale = scale;
+        return Ui.Begin("Diagnostics (read only)"u8, ImGuiWindowFlags.NoSavedSettings);
+    }
+
+    private void EndDiagnostics()
+    {
+        try
+        {
+            var scale = Ui.GetIO().DisplayFramebufferScale;
+            var pos = Ui.GetWindowPos(); var size = Ui.GetWindowSize();
+            _diagnosticsPosition = new(pos.X * scale.X, pos.Y * scale.Y);
+            _diagnosticsCollapsed = Ui.IsWindowCollapsed();
+            // GetWindowSize reports only titlebar height while collapsed.
+            if (!_diagnosticsCollapsed) _diagnosticsSize = new(size.X * scale.X, size.Y * scale.Y);
+        }
+        finally { Ui.End(); }
+    }
+
+    private static bool Section(string label, ref bool open)
+    {
+        Ui.SetNextItemOpen(open, ImGuiCond.Always);
+        return open = Ui.CollapsingHeader(Encoding.UTF8.GetBytes(label));
+    }
+
+    private static void DrawOverview(OverlayDiagnostics diagnostics) =>
+        Rows("overview", ("State", diagnostics.State), ("Details", diagnostics.Detail), ("Frame", $"{diagnostics.FrameMilliseconds:F2} ms"));
+
+    private static void Rows(string id, params (string Label, string Value)[] rows)
+    {
+        if (!Ui.BeginTable(Encoding.UTF8.GetBytes(id), 2, ImGuiTableFlags.SizingStretchProp)) return;
+        try
+        {
+            Ui.TableSetupColumn("Label"u8, ImGuiTableColumnFlags.WidthStretch, 0.36f);
+            Ui.TableSetupColumn("Value"u8, ImGuiTableColumnFlags.WidthStretch, 0.64f);
+            foreach (var row in rows)
+            {
+                Ui.TableNextRow(); Ui.TableNextColumn(); Ui.TextWrapped(Encoding.UTF8.GetBytes(row.Label));
+                Ui.TableNextColumn(); Ui.TextWrapped(Encoding.UTF8.GetBytes(row.Value));
+            }
+        }
+        finally { Ui.EndTable(); }
+    }
+
+    private void DrawPreview(VulkanRenderer renderer)
+    {
+        var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
+        var available = Ui.GetContentRegionAvail();
+        // Preserve physical aspect ratio, fit both the column and remaining usable body.
+        float factor = Math.Min(1, Math.Min(available.X * scale.X / Settings.ImageSize, available.Y * scale.Y / Settings.ImageSize));
+        if (factor <= 0 || !OverlayPixels.HasCoverage(_previewPixels!)) return;
+        var imageSize = new float2(Settings.ImageSize * factor / scale.X, Settings.ImageSize * factor / scale.Y);
+        var min = Ui.GetCursorScreenPos();
+        if (!Ui.IsRectVisible(imageSize) || !Visible(min, min + imageSize, io.DisplaySize)) return;
+        if (!_hasPreviewReference)
+        {
+            _previewGpu = renderer.UploadOverlayTexture(_previewPixels!, gameDescriptor: false);
+            _previewReference = _uiRenderer!.AddTexture(renderer._overlaySampler, _previewGpu.View.VkImageView, VkImageLayout.ShaderReadOnlyOptimal);
+            _hasPreviewReference = true;
+        }
+        var drawList = Ui.GetWindowDrawList(); int before = drawList.IdxBuffer.Count;
+        Ui.Image(_previewReference, imageSize);
+        _recordedImage = drawList.IdxBuffer.Count > before;
     }
 
     // BeginOverlayFrame retires context/backends after the shared fence on any BeginFrame failure.
@@ -134,7 +221,7 @@ public sealed class ImGuiInspector : VulkanInspector
         if (_uiPlatform != null) releases.Add(_uiPlatform.Dispose);
         if (_hasUiContext) releases.Add(() => Ui.DestroyContext(_uiContext));
         try { ResourceLifetime.ReleaseAll(releases.ToArray()); }
-        finally { _uiRenderer = null; _uiPlatform = null; _hasUiContext = false; _inspectorFont = default; }
+        finally { _uiRenderer = null; _uiPlatform = null; _hasUiContext = false; _inspectorFont = default; _restoreDiagnostics = true; }
     }
 
     public override void Dispose()

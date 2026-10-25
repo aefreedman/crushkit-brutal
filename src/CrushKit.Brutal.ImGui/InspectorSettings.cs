@@ -1,7 +1,8 @@
 namespace CrushKit.Brutal.ImGui;
 
 /// <summary>Immutable optional inspector configuration. All supplied assets/limits validate before native startup.
-/// Font size and layout are physical framebuffer pixels; no runtime defaults.</summary>
+/// Font size and initial layout are physical framebuffer pixels; no runtime defaults.
+/// Diagnostics can subsequently be moved/resized; its session layout is retained in memory.</summary>
 public sealed class InspectorSettings
 {
     public string FontPath { get; }
