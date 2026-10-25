@@ -24,6 +24,9 @@
   <Folder Name="/tests/Ecs/">
     <Project Path="tests/Ecs/Ecs.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/ImGui/">
+    <Project Path="tests/ImGui/ImGui.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Input/">
     <Project Path="tests/Input/Input.Tests.csproj" />
   </Folder>

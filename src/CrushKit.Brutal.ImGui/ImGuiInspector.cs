@@ -10,11 +10,24 @@ using Ui = global::Brutal.ImGuiApi.ImGui;
 
 namespace CrushKit.Brutal.ImGui;
 
-/// <summary>Optional read-only inspector. Content is supplied by the application, not inferred from game state.</summary>
+/// <summary>Optional diagnostics inspector with application-supplied UI controls.</summary>
 public sealed class ImGuiInspector : VulkanInspector
 {
     public InspectorSettings Settings { get; }
-    public ImGuiInspector(InspectorSettings settings) => Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+    private readonly Action? _drawControls;
+
+    /// <summary>Creates an inspector with optional application UI.</summary>
+    /// <param name="settings">Validated inspector assets and layout, retained by reference.</param>
+    /// <param name="drawControls">Optional synchronous renderer-thread callback, after the diagnostics window
+    /// ends and before Render, with this inspector's context and frame active. May emit its own windows;
+    /// balance all UI scopes (also on exceptions). UI only: do not call NewFrame, Render, EndFrame, change
+    /// or destroy contexts, or dispose the renderer/inspector. Exceptions cancel the frame and propagate;
+    /// context/backend ownership and retirement remain with the inspector.</param>
+    public ImGuiInspector(InspectorSettings settings, Action? drawControls = null)
+    {
+        Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _drawControls = drawControls;
+    }
     internal override bool InitiallyVisible => Settings.Visible;
     private ImGuiContextPtr _uiContext;
     private ImFontPtr _inspectorFont;
@@ -89,9 +102,16 @@ public sealed class ImGuiInspector : VulkanInspector
             }
             _recordedInspector = Visible(Ui.GetWindowPos(), Ui.GetWindowPos() + Ui.GetWindowSize(), io.DisplaySize);
         }
-        Ui.End(); Ui.Render(); _uiFrame = false;
+        Ui.End();
+        CompleteUiFrame();
         return new(Ui.GetDrawData().TotalIdxCount, _recordedImage, _recordedInspector);
     }
+
+    private void CompleteUiFrame() => ResourceLifetime.OnFailure(() =>
+    {
+        _drawControls?.Invoke();
+        Ui.Render(); _uiFrame = false;
+    }, Cancel);
 
     private static bool Visible(float2 min, float2 max, float2 size) => max.X > 0 && max.Y > 0 && min.X < size.X && min.Y < size.Y && max.X > min.X && max.Y > min.Y;
 

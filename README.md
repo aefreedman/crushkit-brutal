@@ -10,7 +10,7 @@ A small, composable C# game kit built on published BRUTAL packages. This is the 
 | --- | --- |
 | `CrushKit.Brutal.Draw2D` | Headless draw lists, tessellation, transforms, clipping, colors, fills, outlines and patterns |
 | `CrushKit.Brutal.Vulkan` | Direct Vulkan/GLFW presentation, frame uploads, embedded shaders, bounded SDL.Ttf label cache and textured quads |
-| `CrushKit.Brutal.ImGui` | Optional read-only inspector, supplied explicitly by the application |
+| `CrushKit.Brutal.ImGui` | Optional diagnostics inspector with application-supplied UI controls |
 | `CrushKit.Brutal.Input` | Binding-neutral GLFW samples, pad selection, aggregate edges and radial direction helpers |
 | `CrushKit.Brutal.Audio` | Generic clip/SDL.Mixer ownership, silent fallback and first-idle/drop-new bounded voices |
 | `CrushKit.Brutal.Ecs` | Arch world lifetime, worker jobs with explicit dependencies, queued submissions and awaitable completion |
@@ -20,7 +20,7 @@ Vulkan depends on Draw2D, not ImGui. ImGui depends on Vulkan. None depends on Br
 
 The renderer's optional inspector seam is intentionally kit-internal, not a public arbitrary render-plugin API. The provided `ImGuiInspector` transfers ownership to the renderer when passed to `ConfigureOverlay`; it retires at the shared fence/device-idle boundaries. Overlay label content, diagnostic state/detail strings, layout settings, fonts and images are supplied by the application. The kit ships no game fonts, media or default configuration.
 
-Text-only configuration is independent: `OverlaySettings` contains only text settings and requires no inspector assets. `CrushKit.Brutal.ImGui.InspectorSettings` owns the inspector font, PNG, limits and layout; construct `new ImGuiInspector(inspectorSettings)` and pass it to `ConfigureOverlay(textSettings, inspector)`. Both settings objects validate before native startup and are retained, not copied or merged with hidden defaults. Applications may keep a combined JSON schema and explicitly create both objects, as Breakout does.
+Text-only configuration is independent: `OverlaySettings` contains only text settings and requires no inspector assets. `CrushKit.Brutal.ImGui.InspectorSettings` owns the inspector font, PNG, limits and layout; construct `new ImGuiInspector(inspectorSettings)` and pass it to `ConfigureOverlay(textSettings, inspector)`. An optional second constructor argument, `Action? drawControls = null`, emits application UI after diagnostics and before ImGui rendering; see the [UI-only callback and lifetime contract](docs/imgui-inspector.md). Both settings objects validate before native startup and are retained, not copied or merged with hidden defaults. Applications may keep a combined JSON schema and explicitly create both objects, as Breakout does.
 
 ## Requirements and limits
 
@@ -45,6 +45,7 @@ dotnet restore CrushKit.slnx --locked-mode
 dotnet build CrushKit.slnx --no-restore
 dotnet test tests/Draw2D/Draw2D.Tests.csproj --no-restore
 dotnet test tests/Vulkan/Vulkan.Tests.csproj --no-restore
+dotnet test tests/ImGui/ImGui.Tests.csproj --no-restore
 dotnet test tests/Input/Input.Tests.csproj --no-restore
 dotnet test tests/Audio/Audio.Tests.csproj --no-restore
 dotnet test tests/Ecs/Ecs.Tests.csproj --no-restore
