@@ -35,6 +35,12 @@ A later unsupported surface configuration fails rather than silently changing th
 successfully created swapchain mode (null before creation). Recreation logs both.
 The host owns frame caps and event pumping; no game configuration or simulation timing enters the kit.
 
+## Unreleased baked-mesh alternative
+
+The source branch provides `BakedShapeMesh`, explicit `BakedMeshLimits`, `OrderedShapeDrawList` and a `VulkanRenderer.Draw(OrderedShapeFrame, ...)` overload. These are not in the existing preview.10 packages and do not replace ordinary triangle drawing. See [the ownership and fallback contract](docs/draw2d.md#unreleased-ordered-baked-meshes).
+
+Local disc/compound-rectangle geometry is immutable; dynamic instances update position, uniform scale and premultiplied color. Adjacent compatible operations may batch, but translucent objects are never sorted. Unsupported precision/transforms keep the triangle path. This targets CPU expansion and upload volume, not an already batched draw-call count. Application configuration and any production path selector remain application-owned; no alternate default is enabled.
+
 ## Requirements and limits
 
 - .NET 10 SDK, pinned by `global.json`.

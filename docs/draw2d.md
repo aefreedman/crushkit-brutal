@@ -53,6 +53,28 @@ The Unity Shapes public interfaces in read-only PrototypeStudio were a **concept
 
 Curves target <=0.25 physical-pixel chord error (8-4096 full-circle segments). Framebuffer coordinate magnitude is bounded by 2^20; default budgets are 1,000,000 vertices / 3,000,000 indices. Invalid/nonfinite/negative input or state throws. Valid zero-size/alpha/empty-clip/singular-transform shapes emit nothing. Reflections are supported, but finite geometry can be unrepresentable in float32: actual inverted triangles or touching/crossing quantized polyline boundaries are rejected transactionally, not repaired. Budget/tessellation/pattern-complexity failures also throw without partial shape output, including command merging: each failing shape call leaves previously published vertices, indices and commands unchanged. This does not extend borrowed-frame lifetime.
 
+## Unreleased ordered baked meshes
+
+This source-only alternative is not enabled by ordinary `ShapeDrawList`/`VulkanRenderer.Draw(ShapeFrame, ...)` calls or included in the existing preview.10 packages. It supplies immutable local discs and nonoverlapping, optionally touching compound rectangles, not a general scene/path framework. Rounded bricks, arbitrary triangles, outlines and trails may continue through the ordinary dynamic path.
+
+Create an `OrderedShapeDrawList` with application-supplied immutable `BakedMeshLimits`; no settings defaults are supplied. Consume a finished frame synchronously before reusing **either** producer:
+
+```csharp
+using var triangles = new ShapeDrawList();
+using var ordered = new OrderedShapeDrawList(meshLimits);
+triangles.BeginFrame(width, height);
+ordered.BeginFrame();
+triangles.FillRect(new(0), new(width, height), background);
+ordered.Disc(triangles, center, radius, tint);
+renderer.Draw(ordered.Finish(triangles), background);
+```
+
+`Disc` retains the published generator/seam weld and existing physical-pixel resolution policy, falling back to ordinary tessellation when its sufficient precision bounds cannot certify the instance. The accepted fast transform is identity world-to-pixel plus positive uniform local scale/translation; other supported ordinary transforms are not silently approximated. Nonzero subnormal local coordinates are ineligible. `TryRectangles` returns false when its candidate certificate/residency cannot support valid source geometry; the caller must emit the corresponding ordinary rectangles **at that same ordered position**. The `BakedShapeMesh.TryRectangles` factory distinguishes invalid source rejection from valid source that cannot form a FLOAT32 certificate (null). Cache keys must identify all immutable geometry inputs/revisions, not merely an entity id. Geometry changes explicitly invalidate relevant keys after prior borrowed-frame consumption; motion, tint and health changes are not geometry revisions.
+
+CPU limits account retained vertices/indices, scalar certificates and entry overhead; applications reserve their bounded selection/revision storage through `ReserveExternalCpuBytes` before baking. Generation admission precedes staging allocation. Current-frame references are cleared before unpinning, and active entries cannot evict. GPU residency is separately byte/count bounded, retains identity-only entries (not CPU geometry/settings references), copies local geometry once on registration and retires/replaces after the existing shared fence. Unchanged meshes survive swapchain recreation; device disposal releases them. Dynamic instance/operation arrays have explicit limits, and virtual original vertex/index budgets remain enforced.
+
+Operations split merged triangle commands at insertion checkpoints and merge only adjacent equal-mesh/equal-clip runs. Additional mesh switches can increase recording/draw work; benchmark total preparation/validation/submission rather than assume fewer draw calls. Colors, half-open clips, premultiplication, sRGB and 4x-MSAA remain unchanged. Frames borrow producer storage; owned game snapshots must not be recycled to accommodate this API. Internal capture/query/held-image hooks are diagnostic-only, not presentation modes or a public rendering extension contract.
+
 Backend: one fence-protected in-flight upload frame, dynamic viewport/scissors, indexed triangles, classic render pass, 4x-MSAA resolve into sRGB swapchain, no depth/culling, VMA-backed buffers/images. Resize rebuilds attachment/pipeline resources. Actual device loss, other platforms/drivers, and unsupported-format/sample-count failure paths have not been exercised in integration.
 
 The later text/texture increment uses published SDL.Ttf and Texture abstractions plus a narrow direct-Vulkan UV material. Standalone FreeType's published DLL still contains no public managed font API; no custom FreeType binding or ImGui game compositor is used.
