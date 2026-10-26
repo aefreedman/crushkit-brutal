@@ -210,7 +210,7 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         return DrawValidated(frame, background);
     }
 
-    private bool DrawValidated(ShapeFrame? frame, LinearColor background)
+    private bool DrawValidated(ShapeFrame? frame, LinearColor background, OrderedShapeFrame? ordered = null)
     {
         var size = _window.FramebufferSize;
         if (_window.IsIconified || size.X <= 0 || size.Y <= 0)
@@ -230,8 +230,10 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         {
             Console.WriteLine($"Shape frame {sized.Width}x{sized.Height} skipped after resize; rebuild at {_extent.Width}x{_extent.Height}.");
             frame = null;
+            ordered = null;
         }
         if (frame is { } upload) Upload(upload);
+        if (ordered is { } baked) UploadBaked(baked);
         var acquired = AcquireImage(out var index);
         if (acquired == VkResult.ErrorOutOfDateKHR)
         {
@@ -243,7 +245,8 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         if (acquired != VkResult.SuboptimalKHR)
             Check(acquired, "Acquire image");
 
-        var geometryRecorded = RecordShapes(index, frame, background);
+        PrepareCapture();
+        var geometryRecorded = RecordShapes(index, frame, background, ordered);
         device.ResetFences([_frameFence]); // Only reset once there will actually be a submission.
         var wait = _imageAvailable;
         var signal = _presentReady[index];
@@ -256,6 +259,7 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
             SignalSemaphoreCount = 1, SignalSemaphores = &signal,
         };
         _queue.Submit(new Span<VkSubmitInfo>(&submit, 1), _frameFence);
+        CompleteCapture();
         var swapchain = _swapchain;
         var presented = PresentImage(new VkPresentInfoKHR
         {
@@ -335,10 +339,11 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         {
             Surface = _surface, MinImageCount = imageCount,
             ImageFormat = format.Format, ImageColorSpace = format.ColorSpace, ImageExtent = _extent,
-            ImageArrayLayers = 1, ImageUsage = VkImageUsageFlags.ColorAttachmentBit,
+            ImageArrayLayers = 1, ImageUsage = CaptureUsage(caps),
             ImageSharingMode = VkSharingMode.Exclusive, PreTransform = caps.CurrentTransform,
             CompositeAlpha = alpha, PresentMode = presentMode, Clipped = true,
         }, null);
+        _captureFormat = format.Format;
         EffectivePresentMode = presentMode;
         _images = new VkImage[device.GetSwapchainImagesKHR_Count(_swapchain)];
         Check(device.GetSwapchainImagesKHR_Write(_swapchain, _images), "Enumerate swapchain images");
@@ -370,6 +375,7 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         {
             releases.Add(device.WaitIdle);
             releases.Add(DisposeOverlay);
+            releases.Add(DisposeBaked);
             releases.AddRange(SwapchainReleases());
             if (!_vertices.IsNull()) releases.Add(_vertices.Dispose);
             if (!_indices.IsNull()) releases.Add(_indices.Dispose);

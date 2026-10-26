@@ -52,6 +52,7 @@ public sealed partial class ShapeDrawList : IDisposable
         world = worldToPixel;
         local = float3x2.Identity;
         vc = ic = cc = 0;
+        bakedVertices = bakedIndices = 0;
         clips.Clear();
         clips.Add(new(0, 0, width, height));
         active = true;
@@ -526,7 +527,7 @@ public sealed partial class ShapeDrawList : IDisposable
             right.Clear(); right.AddRange(scratch); CleanOutline(right);
             ValidateSimpleOutline(right, "Framebuffer FLOAT32 precision breaks the simple stroke outline.");
         }
-        if (polygon.Count > maxVertices - vc || count > maxIndices - ic) throw new InvalidOperationException("Frame geometry budget exceeded.");
+        if (polygon.Count > maxVertices - vc - bakedVertices || count > maxIndices - ic - bakedIndices) throw new InvalidOperationException("Frame geometry budget exceeded.");
         Grow(ref vertices, vc + polygon.Count, maxVertices);
         Grow(ref indices, ic + count, maxIndices);
         Grow(ref commands, cc + 1, Math.Max(1, maxIndices / 3));

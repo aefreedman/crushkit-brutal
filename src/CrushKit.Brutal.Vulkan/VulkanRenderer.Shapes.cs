@@ -171,9 +171,11 @@ public sealed unsafe partial class VulkanRenderer
         }, null);
     }
 
-    private void CreateShapePipeline()
+    private void CreateShapePipeline() => _pipeline = CreateShapePipeline(false);
+
+    private VkPipeline CreateShapePipeline(bool instanced)
     {
-        var vertexInput = new VertexInput(1, 2).AddBinding(0, ByteSize.Of(24), VkVertexInputRate.Vertex)
+        var vertexInput = instanced ? BakedVertexInput() : new VertexInput(1, 2).AddBinding(0, ByteSize.Of(24), VkVertexInputRate.Vertex)
             .AddAttribute(0, 0, VkFormat.R32G32SFloat, ByteSize.Zero)
             .AddAttribute(1, 0, VkFormat.R32G32B32A32SFloat, ByteSize.Of(8)).Check();
         var assembly = new VkPipelineInputAssemblyStateCreateInfo { Topology = VkPrimitiveTopology.TriangleList };
@@ -197,10 +199,10 @@ public sealed unsafe partial class VulkanRenderer
         {
             var stages = stackalloc VkPipelineShaderStageCreateInfo[2]
             {
-                new() { Stage = VkShaderStageFlags.VertexBit, Module = _vertexShader, Name = main },
+                new() { Stage = VkShaderStageFlags.VertexBit, Module = instanced ? _bakedShader : _vertexShader, Name = main },
                 new() { Stage = VkShaderStageFlags.FragmentBit, Module = _fragmentShader, Name = main },
             };
-            _pipeline = _device!.CreateGraphicsPipeline(default, new VkGraphicsPipelineCreateInfo
+            return _device!.CreateGraphicsPipeline(default, new VkGraphicsPipelineCreateInfo
             {
                 StageCount = 2, Stages = stages, VertexInputState = vertexInput, InputAssemblyState = &assembly,
                 ViewportState = &viewport, RasterizationState = &raster, MultisampleState = &multisample,
@@ -245,14 +247,14 @@ public sealed unsafe partial class VulkanRenderer
         UploadBuffer(ref _indices, frame.Indices.Span, VkBufferUsageFlags.IndexBufferBit);
     }
 
-    private void UploadBuffer<T>(ref BufferEx buffer, ReadOnlySpan<T> data, VkBufferUsageFlags usage) where T : unmanaged
+    private void UploadBuffer<T>(ref BufferEx buffer, ReadOnlySpan<T> data, VkBufferUsageFlags usage, bool exact = false) where T : unmanaged
     {
         if (data.IsEmpty) return;
         var bytes = checked(data.Length * sizeof(T));
         if (buffer.IsNull() || buffer.BufferSize < ByteSize.Of(bytes))
         {
             // Only the allocation capacity grows; copy/flush and draw counts remain actual data sizes.
-            int capacity = UploadBufferCapacity.Grow(0, bytes);
+            int capacity = exact ? bytes : UploadBufferCapacity.Grow(0, bytes);
             // Called only after the shared frame fence. Allocate first to preserve ownership on failure.
             var replacement = _allocator!.CreateBuffer(new BufferEx.CreateInfo
             {
@@ -272,7 +274,7 @@ public sealed unsafe partial class VulkanRenderer
             ByteSize.Zero, ByteSize.Of(bytes)), "Flush shape upload");
     }
 
-    private bool RecordShapes(int imageIndex, ShapeFrame? frame, LinearColor background)
+    private bool RecordShapes(int imageIndex, ShapeFrame? frame, LinearColor background, OrderedShapeFrame? ordered = null)
     {
         var geometryRecorded = false;
         ref var api = ref _device!.PInvoke;
@@ -287,7 +289,9 @@ public sealed unsafe partial class VulkanRenderer
             RenderArea = new VkRect2D { Extent = _extent }, ClearValueCount = 1, ClearValues = &clear,
         };
         api.vkCmdBeginRenderPass.Invoke(_command, &pass, VkSubpassContents.Inline);
-        if (frame is { } shapes && !shapes.Indices.IsEmpty && !shapes.Commands.IsEmpty)
+        if (ordered is { } baked)
+            geometryRecorded = RecordBaked(baked);
+        else if (frame is { } shapes && !shapes.Indices.IsEmpty && !shapes.Commands.IsEmpty)
         {
             api.vkCmdBindPipeline.Invoke(_command, VkPipelineBindPoint.Graphics, _pipeline);
             var viewport = new VkViewport { Width = _extent.Width, Height = _extent.Height, MinDepth = 0, MaxDepth = 1 };
@@ -314,6 +318,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         RecordOverlay();
         api.vkCmdEndRenderPass.Invoke(_command);
+        RecordCapture(imageIndex);
         Check(api.vkEndCommandBuffer.Invoke(_command), "End command buffer");
         return geometryRecorded;
     }
@@ -322,6 +327,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var device = _device!;
         List<Action> releases = [ReleaseOverlaySwapchain];
+        if (!_bakedPipeline.IsNull()) { var pipeline = _bakedPipeline; releases.Add(() => device.DestroyPipeline(pipeline, null)); _bakedPipeline = default; }
         foreach (var framebuffer in _framebuffers)
             if (!framebuffer.IsNull()) releases.Add(() => device.DestroyFramebuffer(framebuffer, null));
         if (!_pipeline.IsNull()) { var pipeline = _pipeline; releases.Add(() => device.DestroyPipeline(pipeline, null)); }
