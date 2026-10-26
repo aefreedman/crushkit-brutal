@@ -11,11 +11,18 @@ internal sealed class DiskMeshAdapter : IDisposable
     private readonly NativeStrideList positions = new(ByteSize.Of<float3>());
     private readonly NativeStrideList indices = new(ByteSize.Of<uint>());
 
-    public ReadOnlySpan<float3> Positions => positions.ToSpan<float3>();
-    public ReadOnlySpan<uint> Indices => indices.ToSpan<uint>();
+    private int? cachedResolution;
+    private bool disposed;
+
+    public ReadOnlySpan<float3> Positions { get { Alive(); return positions.ToSpan<float3>(); } }
+    public ReadOnlySpan<uint> Indices { get { Alive(); return indices.ToSpan<uint>(); } }
 
     public void Generate(int resolution)
     {
+        Alive();
+        if (cachedResolution == resolution) return;
+        // Invalidate before touching borrowed storage, including when generation fails.
+        cachedResolution = null;
         positions.Clear();
         indices.Clear();
         var mesh = new ProcGenMesh(positions, indices);
@@ -24,10 +31,16 @@ internal sealed class DiskMeshAdapter : IDisposable
         // not zero: weld only the closing endpoint to prevent a tiny overlapping seam.
         var span = positions.ToSpan<float3>();
         span[^2] = span[0];
+        cachedResolution = resolution;
     }
+
+    private void Alive() => ObjectDisposedException.ThrowIf(disposed, this);
 
     public void Dispose()
     {
+        if (disposed) return;
+        disposed = true;
+        cachedResolution = null;
         positions.Dispose();
         indices.Dispose();
     }
