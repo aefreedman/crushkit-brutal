@@ -65,15 +65,9 @@ public sealed class OrderedShapeDrawList : IDisposable
         State();
         if(!draw.PrepareBaked(position,color)) return true;
         _=BakedShapeMesh.RectanglesCharge(rectangles.Length);
-        var mesh=cache.Find(key) ?? BakeRectangles(key,rectangles);
+        var mesh=cache.Find(key) ?? cache.GetRectangles(key,rectangles);
         if(mesh is null || !draw.TryBakedInstance(mesh,position,1,sourceEndpointError,color,out var instance)) {Fallbacks++;return false;}
         Append(draw,mesh,instance);return true;
-    }
-    private BakedShapeMesh? BakeRectangles(long key,ReadOnlySpan<MeshRectangle> rectangles)
-    {
-        // Only on miss: source array is bounded staging, included in entry reservation allowance.
-        var owned=rectangles.ToArray();
-        return cache.Get(key,BakedShapeMesh.RectanglesCharge(owned.Length),()=>BakedShapeMesh.Rectangles(owned));
     }
     private void Append(ShapeDrawList draw,BakedShapeMesh mesh,MeshInstance instance)
     {

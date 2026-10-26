@@ -137,12 +137,14 @@ public sealed unsafe partial class VulkanRenderer
             {
                 UploadBuffer(ref resident.Vertices,mesh.Vertices,VkBufferUsageFlags.VertexBufferBit,true);
                 UploadBuffer(ref resident.Indices,mesh.Indices,VkBufferUsageFlags.IndexBufferBit,true);
+                // Ownership transfers only when publication succeeds; failed Add must release both buffers.
+                _bakedMeshes.Add(mesh.Identity,resident);
             }
             catch(Exception error)
             {
                 try{resident.Release();}catch(Exception cleanup){throw new AggregateException(error,cleanup);}throw;
             }
-            _bakedMeshes.Add(mesh.Identity,resident);_bakedBytes+=resident.Bytes;BakedMeshUploads++;
+            _bakedBytes+=resident.Bytes;BakedMeshUploads++;
         }
     }
     private bool RecordBaked(OrderedShapeFrame frame)

@@ -21,6 +21,17 @@ public class BakedFrameTests
         operations.Array[operations.Offset]=original with{Clip=new(1,2,4,8)};
         Assert.Throws<ArgumentException>(()=>VulkanRenderer.ValidateBaked(f));operations.Array[operations.Offset]=original;
         VulkanRenderer.ValidateBaked(f);
+        MeshInstance[] unsupported=[
+            new(saved.Origin,new(-4,0),new(0,-4),saved.Color),
+            new(saved.Origin,new(4,0),new(0,5),saved.Color),
+            new(saved.Origin,new(4,.125f),new(0,4),saved.Color),
+            new(saved.Origin,new(MathF.ScaleB(1,-127),0),new(0,MathF.ScaleB(1,-127)),saved.Color)];
+        foreach(var bad in unsupported)
+        {
+            values.Array[values.Offset]=bad;
+            Assert.Throws<ArgumentException>(()=>VulkanRenderer.ValidateBaked(f));
+        }
+        values.Array[values.Offset]=saved;VulkanRenderer.ValidateBaked(f);
     }
     [Fact]
     public void BakedAbiAndExplicitLimitsAreGuarded()

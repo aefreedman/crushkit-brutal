@@ -58,6 +58,9 @@ internal static class BakedPrecision
         double sourceError,int width,int height,out Bounds bounds)
     {
         bounds=default;
+        // Input FTZ of a local subnormal could be amplified by an arbitrarily large normal scale.
+        // Keep the accepted normal-operand proof unchanged; these meshes use ordinary reference fallback.
+        if(mesh.HasSubnormalCoordinates)return false;
         if(!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(scale) || !(scale>0) || !float.IsNormal(packedScale) || packedScale<=0 || width>8192 || height>8192)return false;
         double t=Up(Math.Max(Math.Abs(x),Math.Abs(y))), b=mesh.Bound;
         double m=Add(t,Mul(scale,b));

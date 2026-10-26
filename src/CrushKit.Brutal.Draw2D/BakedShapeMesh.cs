@@ -29,6 +29,7 @@ public sealed class BakedShapeMesh
     internal bool IsDisc { get; }
     internal int Resolution { get; }
     internal double UnitCurveError { get; }
+    internal bool HasSubnormalCoordinates { get; }
 
     private BakedShapeMesh(float2[] points, uint[] triangles, bool disc, int resolution, double sourceError, double separation)
     {
@@ -39,6 +40,7 @@ public sealed class BakedShapeMesh
         foreach (var p in points)
         {
             if (!float.IsFinite(p.X) || !float.IsFinite(p.Y)) throw new ArgumentException("Nonfinite local mesh.");
+            if((p.X!=0 && !float.IsNormal(p.X)) || (p.Y!=0 && !float.IsNormal(p.Y)))HasSubnormalCoordinates=true;
             bound = Math.Max(bound, Math.Max(Math.Abs((double)p.X), Math.Abs((double)p.Y)));
         }
         for (int i = 0; i < triangles.Length; i += 3)
@@ -93,24 +95,43 @@ public sealed class BakedShapeMesh
         return checked(1024L + count*128L);
     }
     public static BakedShapeMesh Rectangles(ReadOnlySpan<MeshRectangle> rectangles)
+        => TryRectangles(rectangles) ?? throw new ArgumentException("Local rectangle cannot be represented by a baked FLOAT32 certificate.");
+
+    internal static void ValidateRectangles(ReadOnlySpan<MeshRectangle> rectangles)
     {
-        _ = RectanglesCharge(rectangles.Length);
+        _=RectanglesCharge(rectangles.Length);
+        for(int i=0;i<rectangles.Length;i++)
+        {
+            var r=rectangles[i];
+            if(!double.IsFinite(r.Left) || !double.IsFinite(r.Right) || !double.IsFinite(r.Top) || !double.IsFinite(r.Bottom) || !(r.Left<r.Right) || !(r.Top<r.Bottom))
+                throw new ArgumentException("Rectangles require finite ordered endpoints.");
+            for(int j=0;j<i;j++)
+            {
+                var q=rectangles[j];
+                if(r.Left<q.Right && q.Left<r.Right && r.Top<q.Bottom && q.Top<r.Bottom)
+                    throw new ArgumentException("Compound rectangles may touch but must not overlap.");
+            }
+        }
+    }
+    internal static bool RectangleCoordinatesRepresentable(ReadOnlySpan<MeshRectangle> rectangles)
+    {
+        foreach(var r in rectangles)
+            if(!float.IsFinite((float)r.Left) || !float.IsFinite((float)r.Right) || !float.IsFinite((float)r.Top) || !float.IsFinite((float)r.Bottom) ||
+                !((float)r.Left<(float)r.Right) || !((float)r.Top<(float)r.Bottom))return false;
+        return true;
+    }
+    /// <summary>Invalid source throws; valid geometry unsupported by the local certificate returns null.</summary>
+    public static BakedShapeMesh? TryRectangles(ReadOnlySpan<MeshRectangle> rectangles)
+    {
+        ValidateRectangles(rectangles); // Validate ALL source before any candidate-only early return/allocation.
+        if(!RectangleCoordinatesRepresentable(rectangles))return null;
         var points = new float2[rectangles.Length*4]; var triangles = new uint[rectangles.Length*6];
         double error = 0, separation = double.PositiveInfinity;
         Span<double> xs = stackalloc double[8]; Span<double> ys = stackalloc double[8];
         for (int i = 0; i < rectangles.Length; i++)
         {
             var r = rectangles[i];
-            if (!double.IsFinite(r.Left) || !double.IsFinite(r.Right) || !double.IsFinite(r.Top) || !double.IsFinite(r.Bottom) || !(r.Left < r.Right) || !(r.Top < r.Bottom))
-                throw new ArgumentException("Rectangles require finite ordered endpoints.");
-            for (int j = 0; j < i; j++)
-            {
-                var q = rectangles[j];
-                if (r.Left < q.Right && q.Left < r.Right && r.Top < q.Bottom && q.Top < r.Bottom)
-                    throw new ArgumentException("Compound rectangles may touch but must not overlap.");
-            }
             float l=(float)r.Left, t=(float)r.Top, h=(float)r.Right, b=(float)r.Bottom;
-            if (!(l<h) || !(t<b)) throw new ArgumentException("Local rectangle collapses in FLOAT32.");
             points[i*4]=new(l,t); points[i*4+1]=new(h,t); points[i*4+2]=new(h,b); points[i*4+3]=new(l,b);
             uint v=(uint)(i*4); int k=i*6;
             triangles[k]=v; triangles[k+1]=v+1; triangles[k+2]=v+2;
@@ -173,16 +194,34 @@ public sealed class BakedMeshCache : IDisposable
         Alive(); ArgumentNullException.ThrowIfNull(bake);
         if(reservation<1) throw new ArgumentOutOfRangeException(nameof(reservation));
         var existing=Find(key);if(existing is not null)return existing;
-        if(reservation>Limits.CpuBytes) return null;
+        if(!Admit(reservation))return null;
+        return Store(key,reservation,bake());
+    }
+    /// <summary>Validates source, then admits the entire bake before allocating; never copies source staging.</summary>
+    public BakedShapeMesh? GetRectangles(long key,ReadOnlySpan<MeshRectangle> rectangles)
+    {
+        Alive();BakedShapeMesh.ValidateRectangles(rectangles);
+        if(!BakedShapeMesh.RectangleCoordinatesRepresentable(rectangles))return null;
+        var existing=Find(key);if(existing is not null)return existing;
+        long reservation=BakedShapeMesh.RectanglesCharge(rectangles.Length);
+        if(!Admit(reservation))return null;
+        var mesh=BakedShapeMesh.TryRectangles(rectangles);
+        return mesh is null?null:Store(key,reservation,mesh);
+    }
+    private bool Admit(long reservation)
+    {
+        if(reservation>Limits.CpuBytes)return false;
         while(entries.Count>=Limits.MeshCount || RetainedBytes+reservation>Limits.CpuBytes)
         {
             Entry? victim=null;
             foreach(var e in entries) if(!e.Pinned && (victim is null || e.Stamp<victim.Stamp)) victim=e;
-            if(victim is null) return null;
+            if(victim is null) return false;
             entries.Remove(victim); RetainedBytes-=victim.Mesh.CpuCharge;
         }
-        // Reservation includes staging: no other owner is retained while this factory runs synchronously.
-        var mesh=bake();
+        return true;
+    }
+    private BakedShapeMesh Store(long key,long reservation,BakedShapeMesh mesh)
+    {
         if(mesh.CpuCharge>reservation) throw new InvalidOperationException("Mesh exceeded its CPU reservation.");
         entries.Add(new(key,mesh){Pinned=true,Stamp=++stamp}); RetainedBytes+=mesh.CpuCharge; Bakes++;
         return mesh;

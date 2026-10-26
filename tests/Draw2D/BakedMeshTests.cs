@@ -61,6 +61,44 @@ public class BakedMeshTests
         Assert.Empty(f.Instances.ToArray());Assert.Empty(f.Triangles.Indices.ToArray());Assert.Equal(1,ordered.Fallbacks);
     }
     [Fact]
+    public void SubnormalLocalInputCannotBeAmplifiedIntoFastEligibleGeometry()
+    {
+        float tiny=MathF.ScaleB(1,-127),scale=MathF.ScaleB(1,127);
+        MeshRectangle[] rectangles=[new(0,0,tiny,tiny)];
+        using var draw=new ShapeDrawList();using var ordered=new OrderedShapeDrawList(Limits());
+        draw.BeginFrame(1280,720);ordered.BeginFrame();draw.SetTransform(new(scale,0,0,scale,100,100));
+        Assert.False(ordered.TryRectangles(draw,1,rectangles,new(0),0,new(1,0,0)));
+        draw.FillRect(new(0),new(tiny),new(1,0,0));var result=ordered.Finish(draw);
+        Assert.Empty(result.Instances.ToArray());Assert.Equal(6,result.Triangles.Indices.Length);
+        Assert.Equal(new float2(100,100),result.Triangles.Vertices.Span[0].Position);
+        Assert.Contains(result.Triangles.Vertices.ToArray(),v=>v.Position.Equals(new float2(101,101)));
+    }
+    [Fact]
+    public void UnsupportedCertificateIsNotInvalidSourceAndDeniedReservationDoesNotAllocateStaging()
+    {
+        double tiny=Math.ScaleB(1,-160);
+        MeshRectangle[] collapsed=[new(0,0,tiny,tiny)];Assert.Null(BakedShapeMesh.TryRectangles(collapsed));
+        MeshRectangle[] invalid=[new(0,0,tiny,tiny),new(10,10,9,11)];
+        Assert.Throws<ArgumentException>(()=>BakedShapeMesh.TryRectangles(invalid));
+        using var cache=new BakedMeshCache(new(4,8192,8192,10,20));cache.ReserveExternalCpuBytes(8192);
+        MeshRectangle[] source=[new(0,0,10,10)];Assert.Null(cache.GetRectangles(1,source)); // Warm path first.
+        long before=GC.GetAllocatedBytesForCurrentThread();
+        for(int i=0;i<128;i++)Assert.Null(cache.GetRectangles(i+1,source));
+        long allocated=GC.GetAllocatedBytesForCurrentThread()-before;
+        Assert.Equal(0,allocated);Assert.Equal(8192,cache.RetainedBytes);Assert.Equal(0,cache.Count);Assert.Equal(0,cache.Bakes);
+        Assert.Throws<ArgumentException>(()=>cache.GetRectangles(999,invalid));Assert.Equal(8192,cache.RetainedBytes);
+    }
+    [Fact]
+    public void OrderedProducerRequiresBeginAndCannotModifyFinishedBorrowedFrame()
+    {
+        using var draw=new ShapeDrawList();using var ordered=new OrderedShapeDrawList(Limits());draw.BeginFrame(1280,720);
+        Assert.Throws<InvalidOperationException>(()=>ordered.Disc(draw,new(100),4,new(1,0,0)));
+        ordered.BeginFrame();ordered.Disc(draw,new(100),4,new(1,0,0));var frame=ordered.Finish(draw);
+        var original=frame.Instances.ToArray();
+        Assert.Throws<InvalidOperationException>(()=>ordered.Disc(draw,new(200),4,new(1,0,0)));
+        Assert.Throws<InvalidOperationException>(()=>ordered.Finish(draw));Assert.Equal(original,frame.Instances.ToArray());
+    }
+    [Fact]
     public void CpuCacheCountsPinsReservationsAndInvalidationDuringChurn()
     {
         var limits=new BakedMeshLimits(3,50_000,50_000,10,20);using var cache=new BakedMeshCache(limits);
