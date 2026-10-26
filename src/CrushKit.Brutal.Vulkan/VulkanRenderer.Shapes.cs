@@ -251,10 +251,12 @@ public sealed unsafe partial class VulkanRenderer
         var bytes = checked(data.Length * sizeof(T));
         if (buffer.IsNull() || buffer.BufferSize < ByteSize.Of(bytes))
         {
+            // Only the allocation capacity grows; copy/flush and draw counts remain actual data sizes.
+            int capacity = UploadBufferCapacity.Grow(0, bytes);
             // Called only after the shared frame fence. Allocate first to preserve ownership on failure.
             var replacement = _allocator!.CreateBuffer(new BufferEx.CreateInfo
             {
-                Name = "", BufferSize = ByteSize.Of(bytes), BufferUsage = usage,
+                Name = "", BufferSize = ByteSize.Of(capacity), BufferUsage = usage,
                 BufferSharingMode = VkSharingMode.Exclusive, AllocPreference = MemoryPreference.PreferCpu,
                 AllocRequiredProperties = VkMemoryPropertyFlags.HostVisibleBit,
             });
