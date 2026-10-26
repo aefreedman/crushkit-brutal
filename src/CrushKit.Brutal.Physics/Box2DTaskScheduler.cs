@@ -31,6 +31,8 @@ public sealed class Box2DTaskScheduler : IDisposable
     private long nextTaskId;
     private bool disposed;
     private readonly Action<DispatchPoint>? dispatchHook;
+    private readonly Action<int>? rangeReturnedHook;
+    private readonly Action? completingHook;
     internal enum DispatchPoint { AfterSchedule, AfterFlush }
 
     public int WorkerCount { get; }
@@ -42,9 +44,12 @@ public sealed class Box2DTaskScheduler : IDisposable
     public Box2DTaskScheduler(int workerCount) : this(workerCount, null) { }
 
     // Internal fault hook runs only at known dispatch boundaries, never inside scheduler internals.
-    internal unsafe Box2DTaskScheduler(int workerCount, Action<DispatchPoint>? dispatchHook)
+    internal unsafe Box2DTaskScheduler(int workerCount, Action<DispatchPoint>? dispatchHook,
+        Action<int>? rangeReturnedHook = null, Action? completingHook = null)
     {
         this.dispatchHook = dispatchHook;
+        this.rangeReturnedHook = rangeReturnedHook;
+        this.completingHook = completingHook;
         // Box2D 3.x uses fixed-size per-worker storage; keep indices within its 64-worker limit.
         if (workerCount is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(workerCount));
         WorkerCount = workerCount;
@@ -113,11 +118,10 @@ public sealed class Box2DTaskScheduler : IDisposable
             startup.SetResult();
             foreach (var task in requests.GetConsumingEnumerable())
             {
-                JobHandle handle;
-                try { handle = scheduler.Schedule(task, task.RangeCount); }
+                try { task.Schedule(scheduler); }
                 catch (Exception error)
                 {
-                    InfrastructureFailure("Schedule may have partially accepted native work before returning its handle.", error);
+                    InfrastructureFailure("Schedule may have partially accepted native work before all range handles were returned.", error);
                     throw;
                 }
                 bool flushed = false;
@@ -127,20 +131,21 @@ public sealed class Box2DTaskScheduler : IDisposable
                     FlushOrFail(scheduler);
                     flushed = true;
                     dispatchHook?.Invoke(DispatchPoint.AfterFlush);
-                    task.Dispatched.SetResult(handle);
+                    task.Dispatched.SetResult();
                 }
                 catch (Exception error)
                 {
                     Capture(error);
-                    // A hook failure leaves a known handle. Publish the failure only after that
-                    // handle is fully drained: returning null tells Box2D that no work is active.
+                    // A hook failure leaves every range handle known. Publish the failure only
+                    // after all handles drain: null tells Box2D that no work is active.
                     // FlushOrFail never returns after an actual Flush failure, so this is never a retry.
                     if (!flushed) FlushOrFail(scheduler);
-                    CompleteOrFail(handle);
+                    task.CompleteHandles();
                     task.Dispatched.SetException(error);
                 }
             }
-            // Dispose cancels scheduler workers, so drain first while workers are still alive.
+            // Upstream Dispose cancels/clears queues (it does not join workers), so drain
+            // every accepted handle first. No worker can access native owners after this barrier.
             NativeTask[] pending;
             lock (gate) pending = tasks.Values.ToArray();
             foreach (var task in pending) task.Complete();
@@ -231,7 +236,7 @@ public sealed class Box2DTaskScheduler : IDisposable
     }
 
     /// <summary>
-    /// After configured worlds have stopped stepping, drains accepted tasks then shuts down workers.
+    /// After configured worlds have stopped stepping, drains accepted handles then requests worker shutdown.
     /// Idempotent; call ThrowIfFaulted separately to report errors without hiding world cleanup.
     /// </summary>
     public void Dispose()
@@ -250,17 +255,19 @@ public sealed class Box2DTaskScheduler : IDisposable
         GC.KeepAlive(finish);
     }
 
-    private sealed class NativeTask : IJobParallelFor
+    private sealed class NativeTask
     {
         private readonly Box2DTaskScheduler owner;
         private readonly B2TaskCallback callback;
         private readonly int itemCount;
         private readonly int rangeSize;
         private readonly nint context;
-        internal readonly TaskCompletionSource<JobHandle> Dispatched = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly object completionGate = new();
+        private readonly NativeRange[] ranges;
+        private readonly JobHandle[] handles;
+        private bool completed;
+        internal readonly TaskCompletionSource Dispatched = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal int RangeCount { get; }
-        public int ThreadCount => owner.WorkerCount;
-        public int BatchSize => 1;
 
         internal NativeTask(Box2DTaskScheduler owner, B2TaskCallback callback, int itemCount, int minRange, nint context)
         {
@@ -270,9 +277,20 @@ public sealed class Box2DTaskScheduler : IDisposable
             this.context = context;
             rangeSize = (int)Math.Max(minRange, ((long)itemCount + owner.WorkerCount - 1) / owner.WorkerCount);
             RangeCount = (int)(((long)itemCount + rangeSize - 1) / rangeSize);
+            // Bounded by WorkerCount, never itemCount. No new partitioning or scheduler.
+            ranges = new NativeRange[RangeCount];
+            handles = new JobHandle[RangeCount];
+            for (int i = 0; i < ranges.Length; i++) ranges[i] = new NativeRange(this, i);
         }
 
-        public void Execute(int index)
+        internal void Schedule(JobScheduler scheduler)
+        {
+            // Plain IJob avoids 1.1.2's parallel-master subscriber-poll finalization stage.
+            // Any exception here leaves partial acceptance unknown: caller must fail fast.
+            for (int i = 0; i < ranges.Length; i++) handles[i] = scheduler.Schedule(ranges[i]);
+        }
+
+        private void Execute(int index)
         {
             try
             {
@@ -283,13 +301,20 @@ public sealed class Box2DTaskScheduler : IDisposable
                 callback(start, end, worker, context);
             }
             catch (Exception error) { owner.Capture(error); }
+            // Tests can hold the managed postamble AFTER native return. This is not completion:
+            // native token release must still wait for Execute return and handle publication.
+            try { owner.rangeReturnedHook?.Invoke(index); }
+            catch (Exception error) { owner.Capture(error); }
         }
 
-        public void Finish() { }
+        private sealed class NativeRange(NativeTask task, int index) : IJob
+        {
+            public void Execute() => task.Execute(index);
+        }
+
         internal void Complete()
         {
-            JobHandle handle;
-            try { handle = Dispatched.Task.GetAwaiter().GetResult(); }
+            try { Dispatched.Task.GetAwaiter().GetResult(); }
             catch (Exception error)
             {
                 // Dispatch faults are published only after a known handle has drained. An
@@ -299,7 +324,20 @@ public sealed class Box2DTaskScheduler : IDisposable
                 owner.Capture(error);
                 return;
             }
-            CompleteOrFail(handle);
+            CompleteHandles();
+        }
+
+        internal void CompleteHandles()
+        {
+            lock (completionGate)
+            {
+                if (completed) return;
+                owner.completingHook?.Invoke();
+                foreach (var handle in handles) CompleteOrFail(handle);
+                // Drain/Finish/Dispose may revisit this task after scheduler pool reuse. Never
+                // reinterpret retained handle storage as fresh work or re-wait a recycled job.
+                completed = true;
+            }
         }
     }
 }
