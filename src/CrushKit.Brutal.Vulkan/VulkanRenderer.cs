@@ -38,6 +38,10 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
     private int _queueFamily;
     private bool _recreate = true;
     private bool _disposed;
+    private VkPresentModeKHR[] _presentModes = [];
+    public bool VSync { get; private set; } = true;
+    /// <summary>Actual mode of the last successfully created swapchain, or null before the first draw.</summary>
+    public VkPresentModeKHR? EffectivePresentMode { get; private set; }
     private static int _validationErrors;
     private static int _validationWarnings;
 
@@ -52,6 +56,48 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         var renderer = new VulkanRenderer(window);
         ResourceLifetime.OnFailure(() => renderer.Initialize(validation), renderer.Dispose);
         return renderer;
+    }
+
+    public static VulkanRenderer Create(GlfwWindow window, bool validation, bool vSync)
+    {
+        var renderer = new VulkanRenderer(window);
+        ResourceLifetime.OnFailure(() =>
+        {
+            renderer.Initialize(validation);
+            renderer.SetVSync(vSync);
+        }, renderer.Dispose);
+        return renderer;
+    }
+
+    /// <summary>Side-effect-free policy preflight; unsupported Immediate is never replaced by FIFO/mailbox.</summary>
+    public void ValidateVSync(bool enabled)
+    {
+        RequireOwner();
+        SelectPresentMode(enabled, _presentModes);
+    }
+
+    /// <summary>Schedules recreation at the next draw, preserving image-indexed synchronization lifetimes.</summary>
+    public void SetVSync(bool enabled)
+    {
+        ValidateVSync(enabled);
+        if (VSync == enabled) return;
+        VSync = enabled;
+        _recreate = true;
+    }
+
+    private void RequireOwner()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (Environment.CurrentManagedThreadId != _ownerThread)
+            throw new InvalidOperationException("Presentation policy must be accessed on the renderer owner thread.");
+    }
+
+    internal static VkPresentModeKHR SelectPresentMode(bool enabled, ReadOnlySpan<VkPresentModeKHR> supported)
+    {
+        var requested = enabled ? VkPresentModeKHR.FifoKHR : VkPresentModeKHR.ImmediateKHR;
+        if (!supported.Contains(requested))
+            throw new NotSupportedException($"Requested VSync={enabled} requires unsupported present mode {requested}.");
+        return requested;
     }
 
     private void Initialize(bool validation)
@@ -92,6 +138,9 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         Check((VkResult)Glfw.CreateWindowSurface(_instance.Handle.VkHandle, _window, out var surface), "Create window surface");
         _surface = new VkSurfaceKHR((nint)surface);
         SelectDevice();
+        _presentModes = new VkPresentModeKHR[_physicalDevice.GetSurfacePresentModesKHR_Count(_surface)];
+        Check(_physicalDevice.GetSurfacePresentModesKHR_Write(_surface, _presentModes), "Enumerate surface present modes");
+        ValidateVSync(VSync);
 
         var priority = 1f;
         var queueInfo = new VkDeviceQueueCreateInfo
@@ -260,6 +309,7 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
 
     private void RecreateSwapchain(int2 size)
     {
+        var presentMode = SelectPresentMode(VSync, _presentModes);
         var device = _device!;
         device.WaitIdle(); // Simple lifecycle boundary; never used for normal per-frame synchronization.
         DestroySwapchain();
@@ -287,8 +337,9 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
             ImageFormat = format.Format, ImageColorSpace = format.ColorSpace, ImageExtent = _extent,
             ImageArrayLayers = 1, ImageUsage = VkImageUsageFlags.ColorAttachmentBit,
             ImageSharingMode = VkSharingMode.Exclusive, PreTransform = caps.CurrentTransform,
-            CompositeAlpha = alpha, PresentMode = VkPresentModeKHR.FifoKHR, Clipped = true,
+            CompositeAlpha = alpha, PresentMode = presentMode, Clipped = true,
         }, null);
+        EffectivePresentMode = presentMode;
         _images = new VkImage[device.GetSwapchainImagesKHR_Count(_swapchain)];
         Check(device.GetSwapchainImagesKHR_Write(_swapchain, _images), "Enumerate swapchain images");
         _presentReady = new VkSemaphore[_images.Length];
@@ -297,7 +348,7 @@ public sealed unsafe partial class VulkanRenderer : IDisposable
         CreateAttachments(format.Format);
         _swapchainGeneration++;
         _recreate = false;
-        Console.WriteLine($"Swapchain: {_extent.Width}x{_extent.Height}, {_images.Length} images, {format.Format}, FIFO.");
+        Console.WriteLine($"Swapchain: {_extent.Width}x{_extent.Height}, {_images.Length} images, {format.Format}, requested VSync={VSync}, effective={EffectivePresentMode}.");
     }
 
     private void DestroySwapchain()

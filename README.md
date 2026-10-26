@@ -22,6 +22,19 @@ The renderer's optional inspector seam is intentionally kit-internal, not a publ
 
 Text-only configuration is independent: `OverlaySettings` contains only text settings and requires no inspector assets. `CrushKit.Brutal.ImGui.InspectorSettings` owns the inspector font, PNG, limits and layout; construct `new ImGuiInspector(inspectorSettings)` and pass it to `ConfigureOverlay(textSettings, inspector)`. An optional second constructor argument, `Action? drawControls = null`, emits application UI during `BeginOverlayFrame`, before diagnostics and swapchain image acquisition; see the [UI-only callback and lifetime contract](docs/imgui-inspector.md). Diagnostics is a separate movable/resizable/collapsible window with wrapped label/value rows, an initially open Preview and initially closed technical sections. Its bounds and section choices persist in memory across hide/show and context recreation; JSON layout supplies initial physical-pixel bounds, not fixed constraints. Both settings objects validate before native startup and are retained, not copied or merged with hidden defaults. Applications may keep a combined JSON schema and explicitly create both objects, as Breakout does.
 
+## Presentation policy
+
+`VulkanRenderer.Create(window, validation)` retains FIFO source compatibility.
+Use `Create(window, validation, vSync)` for an explicit startup policy. `ValidateVSync(bool)`
+is side-effect-free preflight; `SetVSync(bool)` validates before publishing and schedules the
+existing swapchain recreation boundary, doing nothing when unchanged. Both require the owner
+thread and a live renderer. VSync on requires FIFO; off requires supported Immediate, with no
+mailbox/FIFO fallback. Available modes are cached for the selected surface/device at startup.
+A later unsupported surface configuration fails rather than silently changing the policy.
+`VSync` reports the requested policy; nullable `EffectivePresentMode` reports the last
+successfully created swapchain mode (null before creation). Recreation logs both.
+The host owns frame caps and event pumping; no game configuration or simulation timing enters the kit.
+
 ## Requirements and limits
 
 - .NET 10 SDK, pinned by `global.json`.
