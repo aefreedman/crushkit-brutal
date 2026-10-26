@@ -50,6 +50,9 @@ public sealed unsafe partial class VulkanRenderer
         }], null);
     }
 
+    private readonly Dictionary<string,string> _compiledShaderHashes = [];
+    internal IReadOnlyDictionary<string,string> CompiledShaderHashes => _compiledShaderHashes;
+
     private VkShaderModule CompileShader(Compiler compiler, CompileOptions options, string name, ShaderKind kind)
     {
         try
@@ -59,7 +62,9 @@ public sealed unsafe partial class VulkanRenderer
             using var reader = new StreamReader(stream);
             using var result = compiler.Compile(Encoding.UTF8.GetBytes(reader.ReadToEnd()), kind, Encoding.UTF8.GetBytes(name + "\0"), "main"u8, options);
             result.ThrowIfFailed();
-            return ShaderModuleExtensions.FromSpirv(_device!, new ReadOnlySpan<byte>(result.GetBytes(), checked((int)result.GetLength())), null);
+            var spirv = new ReadOnlySpan<byte>(result.GetBytes(), checked((int)result.GetLength()));
+            _compiledShaderHashes[name] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(spirv));
+            return ShaderModuleExtensions.FromSpirv(_device!, spirv, null);
         }
         catch (Exception error)
         {

@@ -14,8 +14,19 @@ public sealed unsafe partial class VulkanRenderer
     private bool _captureEnabled;
     private BufferEx _captureBuffer;
     private VkFormat _captureFormat;
+    private VkImageUsageFlags _captureSupportedUsage;
     private int _captureBytes;
     internal byte[]? CapturedRgba { get; private set; }
+    internal object CaptureFacts => new { width=_extent.Width,height=_extent.Height,format=_captureFormat.ToString(),
+        samples=Samples.ToString(),supportedUsage=_captureSupportedUsage.ToString(),resolveImages=_images.Length,multisampleImages=_multisampleImages.Length,capture=_captureEnabled,
+        meshIds=_bakedMeshes.Keys.ToArray(),meshBytes=_bakedBytes,meshUploads=BakedMeshUploads,
+        instanceCapacity=_bakedInstances.IsNull()?0:checked((int)_bakedInstances.BufferSize),
+        vertexCapacity=_vertices.IsNull()?0:checked((int)_vertices.BufferSize),indexCapacity=_indices.IsNull()?0:checked((int)_indices.BufferSize) };
+    internal void PrepareCaptureTarget()
+    {
+        RequireOwner();var size=_window.FramebufferSize;
+        if(_recreate || size.X!=_extent.Width || size.Y!=_extent.Height)RecreateSwapchain(size);
+    }
     /// <summary>Diagnostic startup-only. No capture allocation/transfer/wait on ordinary rendering.</summary>
     internal void EnableCapture()
     {
@@ -25,6 +36,7 @@ public sealed unsafe partial class VulkanRenderer
     }
     private VkImageUsageFlags CaptureUsage(VkSurfaceCapabilitiesKHR caps)
     {
+        _captureSupportedUsage=caps.SupportedUsageFlags;
         var usage=VkImageUsageFlags.ColorAttachmentBit;
         if(_captureEnabled)usage|=VkImageUsageFlags.TransferSrcBit;
         if(!caps.SupportedUsageFlags.HasFlag(usage))throw new NotSupportedException("Matching-target swapchain transfer-source capture is unsupported.");

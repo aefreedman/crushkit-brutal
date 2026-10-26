@@ -122,11 +122,7 @@ public sealed unsafe partial class VulkanRenderer
         foreach(long key in _bakedEvictions)
         {var old=_bakedMeshes[key];_bakedMeshes.Remove(key);_bakedBytes-=old.Bytes;old.Release();}
         if(frame.Instances.IsEmpty)return;
-        if(_bakedShader.IsNull())
-        {
-            using var compiler=ShaderC.CreateCompiler();using var options=ShaderC.CreateCompilerOptions();
-            _bakedShader=CompileShader(compiler,options,"shapes-instance.vert",ShaderKind.VertexShader);
-        }
+        PrepareBakedShader();
         if(_bakedPipeline.IsNull())_bakedPipeline=CreateShapePipeline(true);
         UploadBuffer(ref _bakedInstances,frame.Instances.Span,VkBufferUsageFlags.VertexBufferBit);
         foreach(var op in frame.Operations.Span)
@@ -146,6 +142,13 @@ public sealed unsafe partial class VulkanRenderer
             }
             _bakedBytes+=resident.Bytes;BakedMeshUploads++;
         }
+    }
+    // Internal pre-draw shader identity preflight; also reused lazily by ordinary explicit baked draws.
+    internal void PrepareBakedShader()
+    {
+        if(!_bakedShader.IsNull())return;
+        using var compiler=ShaderC.CreateCompiler();using var options=ShaderC.CreateCompilerOptions();
+        _bakedShader=CompileShader(compiler,options,"shapes-instance.vert",ShaderKind.VertexShader);
     }
     private bool RecordBaked(OrderedShapeFrame frame)
     {
