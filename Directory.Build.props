@@ -6,7 +6,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Version>0.1.0-preview.12</Version>
-    <ImGuiVersion>0.1.0-preview.13</ImGuiVersion>
+    <ImGuiVersion>0.1.0-preview.14</ImGuiVersion>
     <Authors>CrushKit contributors</Authors>
     <Description>Focused game development modules built on BRUTAL.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
