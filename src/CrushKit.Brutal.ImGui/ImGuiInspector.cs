@@ -28,8 +28,13 @@ public sealed class ImGuiInspector : VulkanInspector
     /// balance all UI scopes (also on exceptions). UI only: do not call NewFrame, Render, EndFrame, change
     /// or destroy contexts, or dispose the renderer/inspector. Exceptions cancel the frame, retire the
     /// context/backends at the renderer's fence boundary, and propagate. A later begin recreates them.</param>
-    /// <param name="frameTimeHistory">Optional owner-thread history, collected explicitly by the host outside drawing.</param>
-    public ImGuiInspector(InspectorSettings settings, Action? drawControls = null, FrameTimeHistory? frameTimeHistory = null)
+    public ImGuiInspector(InspectorSettings settings, Action? drawControls = null)
+        : this(settings, drawControls, null) { }
+
+    /// <summary>Creates an inspector with application controls and optional owner-thread history.
+    /// Collect observations explicitly outside UI drawing; the callback has the same UI-only contract
+    /// as the two-argument overload.</summary>
+    public ImGuiInspector(InspectorSettings settings, Action? drawControls, FrameTimeHistory? frameTimeHistory)
     {
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _drawControls = drawControls;

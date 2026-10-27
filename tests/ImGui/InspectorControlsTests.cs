@@ -23,10 +23,14 @@ public sealed class InspectorControlsTests
         Assert.Same(settings, controls.Settings);
         Assert.Equal(0, calls);
         Assert.Throws<ArgumentNullException>(() => new ImGuiInspector(null!, () => calls++));
-        var parameter = typeof(ImGuiInspector).GetConstructors().Single().GetParameters()[1];
+        // Preserve the original CLR signature, not merely optional-argument source calls.
+        var constructor = typeof(ImGuiInspector).GetConstructor([typeof(InspectorSettings), typeof(Action)]);
+        Assert.NotNull(constructor);
+        var parameter = constructor.GetParameters()[1];
         Assert.Equal(typeof(Action), parameter.ParameterType);
         Assert.True(parameter.IsOptional);
         Assert.Null(parameter.DefaultValue);
+        Assert.NotNull(typeof(ImGuiInspector).GetConstructor([typeof(InspectorSettings), typeof(Action), typeof(FrameTimeHistory)]));
     }
 
     [Theory]
@@ -468,7 +472,7 @@ public sealed class InspectorControlsTests
         var previous = Ui.GetCurrentContext();
         var history = new FrameTimeHistory(64);
         for (int i = 0; i < 64; i++) history.Observe(i, i == 19 ? 80 : 16);
-        using var inspector = new ImGuiInspector(Settings(), frameTimeHistory: history);
+        using var inspector = new ImGuiInspector(Settings(), drawControls: null, frameTimeHistory: history);
         try
         {
             AttachCpuFrame(inspector);

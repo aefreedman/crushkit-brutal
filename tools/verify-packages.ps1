@@ -8,11 +8,14 @@ function Assert-File([string]$rootPath, [string]$relative) { if (!(Test-Path (Jo
 Push-Location $root
 try {
     & "$PSScriptRoot/pack-local.ps1" -Configuration $Configuration
-    $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+    $versions = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup
+    $version = $versions.Version
+    $imguiVersion = $versions.ImGuiVersion
     $packages = Join-Path $root 'artifacts/packages'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     foreach ($name in @('Draw2D', 'Vulkan', 'ImGui', 'Input', 'Audio', 'Ecs', 'Physics')) {
-        $archive = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $packages "CrushKit.Brutal.$name.$version.nupkg"))
+        $packageVersion = if ($name -eq 'ImGui') { $imguiVersion } else { $version }
+        $archive = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $packages "CrushKit.Brutal.$name.$packageVersion.nupkg"))
         try {
             $entries = @($archive.Entries.FullName)
             foreach ($required in @("lib/net10.0/CrushKit.Brutal.$name.dll", "buildTransitive/CrushKit.Brutal.$name.targets")) {

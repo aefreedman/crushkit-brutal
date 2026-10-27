@@ -14,7 +14,8 @@ public sealed class InspectorSettings
     public float Height { get; }
     public InspectorPreviewSettings? Preview { get; }
 
-    // Legacy image accessors retain source compatibility; new code uses the optional Preview.
+    // Legacy image accessors remain available. ImagePath is now nullable for image-free settings;
+    // nullable-enabled consumers should migrate to Preview or explicitly handle its absence.
     public string? ImagePath => Preview?.ImagePath;
     public float ImageSize => Preview?.ImageSize ?? 0;
     public int MaxTextureDimension => Preview?.MaxTextureDimension ?? 0;

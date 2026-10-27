@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Version>$(ImGuiVersion)</Version>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../CrushKit.Brutal.Vulkan/CrushKit.Brutal.Vulkan.csproj" />
     <PackageReference Include="Ahwoo.BRUTAL.ImGui" Version="2026.10.3" />

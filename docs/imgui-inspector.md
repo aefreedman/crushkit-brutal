@@ -1,10 +1,11 @@
 # ImGui inspector application controls
 
-`CrushKit.Brutal.ImGui` provides the sealed `ImGuiInspector`:
+`CrushKit.Brutal.ImGui` provides the sealed `ImGuiInspector`. For opt-in responsive category navigation, aligned property rows and action flow, see [tool layout composition](imgui-layout.md).
 
 ```csharp
-public ImGuiInspector(InspectorSettings settings, Action? drawControls = null,
-    FrameTimeHistory? frameTimeHistory = null)
+public ImGuiInspector(InspectorSettings settings, Action? drawControls = null)
+public ImGuiInspector(InspectorSettings settings, Action? drawControls,
+    FrameTimeHistory? frameTimeHistory)
 ```
 
 Pass it to `renderer.ConfigureOverlay(textSettings, inspector)`; ownership transfers to the renderer. Settings, callback and optional history are retained, not copied. Construction does not invoke the callback or initialize native resources. A controls-only consumer supplies no PNG or image limits:
@@ -21,7 +22,7 @@ history.Observe(observationId, elapsedMilliseconds);
 inspector.DiagnosticsVisible = true;
 ```
 
-`DiagnosticsVisible` is initialized from settings and controls only the kit diagnostics window. It does not suppress the application callback, end the ImGui context or disable capture. The legacy PNG-taking `InspectorSettings` constructor remains source-compatible and explicitly enables diagnostics plus an image preview.
+`DiagnosticsVisible` is initialized from settings and controls only the kit diagnostics window. It does not suppress the application callback, end the ImGui context or disable capture. The original two-parameter `ImGuiInspector` constructor remains available for compiled consumers. The legacy PNG-taking `InspectorSettings` constructor remains available and explicitly enables diagnostics plus an image preview. `InspectorSettings.ImagePath` is now nullable because image-free settings have no path; nullable-enabled consumers should use `Preview` or handle absence explicitly (including when treating nullable warnings as errors). The other legacy image accessors report zero without a preview.
 
 When the inspector is visible, the callback runs synchronously on the renderer thread during `BeginOverlayFrame`, immediately after `Ui.NewFrame()`, before diagnostics are emitted and before any swapchain image acquisition. Its own ImGui context and frame are current/active. It runs once per successfully started inspector frame, even if that frame is later cancelled or never submitted. It is not called for hidden, disabled or minimized inspector frames. It is not an input-polling or simulation-update hook.
 
@@ -38,7 +39,7 @@ The Vulkan package remains independent of ImGui; this is a small extension to th
 
 ## Diagnostics layout and session state
 
-Application controls and kit diagnostics remain separate windows. Diagnostics has native titlebar dragging, edge resizing and collapsing. `InspectorSettings.Left/Top/Width/Height` supply **initial physical-pixel bounds**, not per-frame constraints. Font size remains physical pixels. The inspector retains its latest bounds, whole-window collapse and Preview/Rendering/Text cache/Font open choices in the managed instance across hide/show, resize and context retirement. There is no disk settings file, new configuration layer or application-owned context management. A new inspector instance starts from settings again.
+Application controls and kit diagnostics remain separate windows. Diagnostics has native titlebar dragging, edge resizing and collapsing. `InspectorSettings.Left/Top/Width/Height` supply **initial physical-pixel bounds**, not per-frame constraints. Font size remains physical pixels. The inspector retains its latest bounds, whole-window collapse and Frame history/Preview/Rendering/Text cache/Font open choices in the managed instance across hide/show, resize and context retirement. There is no disk settings file, new configuration layer or application-owned context management. A new inspector instance starts from settings again.
 
 Consumers own persistence of their application windows and view state, including whether diagnostics is shown. Hiding the inspector, swapchain recreation and failure retirement may destroy its native ImGui context. Native-only application window positions, collapse choices and widget state therefore do not survive automatically. Retain the state the application needs and reapply it when creating its UI; choose storage format/save policy in the application if disk persistence is wanted. This does not erase application-managed state. Do not manage the kit's context to implement persistence; the kit does not silently enable `imgui.ini`, mutate startup settings, or display persistence warnings on screen.
 
