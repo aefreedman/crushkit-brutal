@@ -12,20 +12,20 @@ public sealed partial class ShapeDrawList
         Start(color);_=Input(position);return !NoOutput(color);
     }
     internal bool TryBakedDisc(BakedMeshCache cache,float2 center,float radius,LinearColor color,
-        out BakedShapeMesh? mesh,out MeshInstance instance)
+        out BakedShapeMesh? mesh,out MeshInstance instance, CircleDetail? detail = null)
     {
         Start(color);_=Input(center);Nonnegative(radius);mesh=null;instance=default;
         if(NoOutput(color) || radius==0)return true;
-        int n=Resolution(radius);
+        int n=DiscResolution(radius,detail);
         mesh=cache.Find(-n) ?? BakeDisc(cache,n);
         if(mesh is null)return false;
-        if(TryBakedInstance(mesh,center,radius,0,color,out instance))return true;
+        if(TryBakedInstance(mesh,center,radius,0,color,out instance,detail?.Mode != CircleDetailMode.FixedSideCount))return true;
         mesh=null;return false;
     }
     private static BakedShapeMesh? BakeDisc(BakedMeshCache cache,int n)=>cache.Get(-n,BakedShapeMesh.DiscCharge(n),()=>BakedShapeMesh.Disc(n));
     internal void CommitBaked(BakedShapeMesh mesh) { bakedVertices+=mesh.VertexCount;bakedIndices+=mesh.IndexCount; }
     internal bool TryBakedInstance(BakedShapeMesh mesh,float2 position,float radius,double sourceEndpointError,LinearColor color,
-        out MeshInstance instance)
+        out MeshInstance instance,bool automaticCurve = true)
     {
         instance=default;
         if(!double.IsFinite(sourceEndpointError) || sourceEndpointError<0)throw new ArgumentOutOfRangeException(nameof(sourceEndpointError));
@@ -36,7 +36,7 @@ public sealed partial class ShapeDrawList
             Math.Abs((double)position.Y)*local.M11+Math.Abs((double)local.M32))+scale*mesh.Bound;
         if(!double.IsFinite(intermediates) || Math.BitIncrement(intermediates)>8191)return false;
         float2 packedOrigin=new((float)origin.X,(float)origin.Y);float packedScale=(float)scale;
-        if(!BakedPrecision.TryBound(mesh,origin.X,origin.Y,scale,packedOrigin,packedScale,sourceEndpointError*local.M11,width,height,out _))return false;
+        if(!BakedPrecision.TryBound(mesh,origin.X,origin.Y,scale,packedOrigin,packedScale,sourceEndpointError*local.M11,width,height,out _,automaticCurve))return false;
         if(mesh.VertexCount>maxVertices-vc-bakedVertices || mesh.IndexCount>maxIndices-ic-bakedIndices)
             throw new InvalidOperationException("Frame geometry budget exceeded.");
         instance=new(packedOrigin,new(packedScale,0),new(0,packedScale),color.Premultiplied);return true;
@@ -55,7 +55,7 @@ internal static class BakedPrecision
     private static double Mul(double a,double b)=>Up(a*b);
     private static double LowerMul(double a,double b)=>Math.BitDecrement(a*b);
     internal static bool TryBound(BakedShapeMesh mesh,double x,double y,double scale,float2 origin,float packedScale,
-        double sourceError,int width,int height,out Bounds bounds)
+        double sourceError,int width,int height,out Bounds bounds,bool automaticCurve = true)
     {
         bounds=default;
         // Input FTZ of a local subnormal could be amplified by an arbitrarily large normal scale.
@@ -86,7 +86,7 @@ internal static class BakedPrecision
         bounds=new(shader,reference,distance,margin);
         if(!double.IsFinite(distance) || distance>0.01 || Add(m,e)>1_048_576 || !(LowerMul(LowerMul(scale,scale),mesh.MinimumArea)>margin))return false;
         // Existing curve policy reserves 0.09px for quantization. Never add to its 0.25px allowance.
-        if(mesh.IsDisc) return e<=0.09 && Add(Mul(scale,mesh.UnitCurveError),e)<=0.25;
+        if(mesh.IsDisc) return e<=0.09 && (!automaticCurve || Add(Mul(scale,mesh.UnitCurveError),e)<=0.25);
         // All compound boundaries are axis-aligned; identical local lines have identical shader evaluation.
         // Strict line ordering preserves every gap/cutout under the admitted positive uniform transform.
         return LowerMul(scale,mesh.FeatureSeparation)>Mul(2,e);
