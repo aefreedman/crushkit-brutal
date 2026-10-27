@@ -34,7 +34,7 @@ ToolFieldAction request = ToolFieldActions.Draw(property.IdUtf8,
 
 The visible `...` button opens a native popup. Optional right-click targets the preceding item; it is an additional shortcut, never the only way to find actions. The result is `None`, `Restore`, `Copy`, or `Preset`. `PresetIndex` is meaningful only for `Preset`, and refers to the supplied order for this call. `ToolFieldPreset` owns a cached display label only; values, stable semantic keys and commands stay in the application. Duplicate preset captions have distinct native index scopes.
 
-The helper does not restore defaults, choose a selected source, save, write the clipboard or execute commands. Restore/copy availability is explicit. Map a returned preset index immediately to the application's value/key before queueing work; do not retain the index across a changing list. Source recovery and factory defaults must be labeled/handled distinctly by the consumer.
+The helper does not restore defaults, choose a selected source, save, write the clipboard or execute commands. Restore/copy availability is explicit. Map a returned preset index immediately to the application's value/key before queueing work; do not retain the index across a changing list. Source recovery and factory defaults must be labeled/handled distinctly by the consumer. Supply `restoreLabel: "Restore from source"u8` (or another truthful application caption) to distinguish the source of recovery; the default generic caption is "Restore value".
 
 ## Small composition example
 

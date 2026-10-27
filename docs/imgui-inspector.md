@@ -1,14 +1,16 @@
 # ImGui inspector application controls
 
-`CrushKit.Brutal.ImGui` provides the sealed `ImGuiInspector`. For opt-in responsive category navigation, aligned property rows and action flow, see [tool layout composition](imgui-layout.md).
+`CrushKit.Brutal.ImGui` provides the sealed `ImGuiInspector`. For opt-in responsive category navigation, aligned property rows and action flow, see [tool layout composition](imgui-layout.md). Optional [immutable themes](imgui-theme.md), [precise property controls and field actions](imgui-property-controls.md), and [bounded event feedback](imgui-feedback.md) compose with the same callback contract; consumers still own values, commands and persistence.
 
 ```csharp
 public ImGuiInspector(InspectorSettings settings, Action? drawControls = null)
 public ImGuiInspector(InspectorSettings settings, Action? drawControls,
     FrameTimeHistory? frameTimeHistory)
+public ImGuiInspector(InspectorSettings settings, Action? drawControls,
+    FrameTimeHistory? frameTimeHistory, InspectorTheme? theme)
 ```
 
-Pass it to `renderer.ConfigureOverlay(textSettings, inspector)`; ownership transfers to the renderer. Settings, callback and optional history are retained, not copied. Construction does not invoke the callback or initialize native resources. A controls-only consumer supplies no PNG or image limits:
+Pass it to `renderer.ConfigureOverlay(textSettings, inspector)`; ownership transfers to the renderer. Settings, callback, optional history and optional theme are retained, not copied. The two- and three-argument CLR constructor signatures remain available; opting out of a theme preserves the existing native appearance. Construction does not invoke the callback or initialize native resources. A controls-only consumer supplies no PNG or image limits:
 
 ```csharp
 var settings = new InspectorSettings(fontPath, fontSize, visible, left, top,

@@ -39,7 +39,8 @@ public static class ToolFieldActions
     /// button is always present; optional right-click targets the preceding item. IDs must be stable.
     /// PresetIndex refers to this call's caller-owned preset order, not a retained native index.</summary>
     public static ToolFieldAction Draw(ReadOnlySpan<byte> id, bool canRestore, bool canCopy,
-        ReadOnlySpan<ToolFieldPreset> presets = default, bool enableContextMenu = true)
+        ReadOnlySpan<ToolFieldPreset> presets = default, bool enableContextMenu = true,
+        ReadOnlySpan<byte> restoreLabel = default)
     {
         ToolControls.ValidateId(id);
         bool contextRequested = enableContextMenu && Ui.IsItemClicked(ImGuiMouseButton.Right);
@@ -52,7 +53,8 @@ public static class ToolFieldActions
             if (!Ui.BeginPopup("##actions"u8, ImGuiWindowFlags.None)) return default;
             try
             {
-                if (Ui.MenuItem("Restore value"u8, default, false, canRestore)) return new(ToolFieldActionKind.Restore);
+                if (Ui.MenuItem(restoreLabel.IsEmpty ? "Restore value"u8 : restoreLabel, default, false, canRestore))
+                    return new(ToolFieldActionKind.Restore);
                 if (Ui.MenuItem("Copy value"u8, default, false, canCopy)) return new(ToolFieldActionKind.Copy);
                 if (!presets.IsEmpty) Ui.Separator();
                 for (int i = 0; i < presets.Length; i++)

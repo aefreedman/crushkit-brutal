@@ -190,8 +190,10 @@ public sealed class ToolControlsTests
         }));
     }
 
-    [Fact]
-    public void VisibleActionButtonOpensPopupAndReturnsRestoreRequestWithoutExecutingIt()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void VisibleActionButtonOpensPopupAndReturnsRestoreRequestWithoutExecutingIt(bool sourceCaption)
     {
         InContext(() =>
         {
@@ -201,7 +203,8 @@ public sealed class ToolControlsTests
             void Draw()
             {
                 Ui.Text("Application value"u8);
-                action = ToolFieldActions.Draw("field"u8, true, true);
+                action = ToolFieldActions.Draw("field"u8, true, true,
+                    restoreLabel: sourceCaption ? "Restore from source"u8 : default);
                 button = (Ui.GetItemRectMin() + Ui.GetItemRectMax()) / 2;
                 Ui.PushID("field"u8);
                 try { popup = Ui.IsPopupOpen("##actions"u8); }
