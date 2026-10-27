@@ -137,13 +137,14 @@ public sealed partial class ShapeDrawList : IDisposable
         polygon.Add(o + s);
         polygon.Add(o + new P(0, s.Y));
     }
-    public void FillDisc(float2 center, float radius, LinearColor color)
+    public void FillDisc(float2 center, float radius, LinearColor color) => FillDisc(center, radius, color, null);
+    public void FillDisc(float2 center, float radius, LinearColor color, CircleDetail? detail)
     {
         Start(color);
         var c = Input(center);
         Nonnegative(radius);
         if (NoOutput(color) || radius == 0) return;
-        int n = Resolution(radius);
+        int n = DiscResolution(radius, detail);
         disk.Generate(n);
         var ps = disk.Positions;
         var ids = disk.Indices;
@@ -360,6 +361,8 @@ public sealed partial class ShapeDrawList : IDisposable
         double x = Dot(a, a), y = Dot(b, b), z = Dot(a, b);
         return Math.Sqrt((x + y + Math.Sqrt((x - y) * (x - y) + 4 * z * z)) / 2);
     }
+    private int DiscResolution(double radius, CircleDetail? detail) => detail?.Mode == CircleDetailMode.FixedSideCount
+        ? detail.FixedSides : (Resolution(radius) + 3) / 4 * 4;
     private int Resolution(double radius, bool framebuffer = false)
     {
         double r = framebuffer ? radius : radius * Scale();

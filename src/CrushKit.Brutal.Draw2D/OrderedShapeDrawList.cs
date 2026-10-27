@@ -51,12 +51,13 @@ public sealed class OrderedShapeDrawList : IDisposable
     public void InvalidateMesh(long key) { Alive();cache.Invalidate(key); }
     /// <summary>Charge bounded application geometry selection/revision storage to the same CPU budget before baking.</summary>
     public void ReserveExternalCpuBytes(long bytes) { Alive();cache.ReserveExternalCpuBytes(bytes); }
-    public void Disc(ShapeDrawList draw,float2 center,float radius,LinearColor color)
+    public void Disc(ShapeDrawList draw,float2 center,float radius,LinearColor color) => Disc(draw,center,radius,color,null);
+    public void Disc(ShapeDrawList draw,float2 center,float radius,LinearColor color,CircleDetail? detail)
     {
         State();
-        if(draw.TryBakedDisc(cache,center,radius,color,out var mesh,out var instance))
+        if(draw.TryBakedDisc(cache,center,radius,color,out var mesh,out var instance,detail))
         { if(mesh is not null) Append(draw,mesh,instance); }
-        else { Fallbacks++;draw.FillDisc(center,radius,color); }
+        else { Fallbacks++;draw.FillDisc(center,radius,color,detail); }
     }
     /// <summary>The sourceEndpointError bounds game-specific source construction before the draw transform.</summary>
     public bool TryRectangles(ShapeDrawList draw,long key,ReadOnlySpan<MeshRectangle> rectangles,float2 position,

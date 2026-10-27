@@ -11,20 +11,44 @@ namespace Shapes.Tests;
 public class DiskReuseTests
 {
     [Fact]
-    public void RepeatedAndAlternatingResolutionsMatchPublishedGeneratorBitwise()
+    public void RepeatedAndAlternatingResolutionsReusePublishedTopologyWithSymmetricRim()
     {
         using var adapter = new DiskMeshAdapter();
         using var positions = new NativeStrideList(ByteSize.Of<float3>());
         using var indices = new NativeStrideList(ByteSize.Of<uint>());
-        foreach (int resolution in new[] { 8, 8, 32, 32, 8, 128, 8, 128, 128 })
+        foreach (int resolution in new[] { 8, 8, 12, 16, 20, 32, 32, 128, 4096, 8 })
         {
             positions.Clear(); indices.Clear();
             var mesh = new ProcGenMesh(positions, indices);
             ProcGenMeshLibrary.GenerateDisk(in mesh, new float3(0, 0, 0), new float3(0, 0, 1), 1, resolution, false);
             var expected = positions.ToSpan<float3>();
-            expected[^2] = expected[0];
             adapter.Generate(resolution);
-            Assert.True(MemoryMarshal.AsBytes(expected).SequenceEqual(MemoryMarshal.AsBytes(adapter.Positions)));
+            var generated = adapter.Positions;
+            Assert.Equal(3*resolution, generated.Length);
+            var actual = new float3[resolution];
+            for(int i=0;i<resolution;i++)
+            {
+                actual[i]=generated[(int)adapter.Indices[3*i]];
+                Assert.Equal(new float3(0),generated[(int)adapter.Indices[3*i+2]]);
+                Assert.Equal(generated[(int)adapter.Indices[3*((i+1)%resolution)]],generated[(int)adapter.Indices[3*i+1]]);
+            }
+            Assert.Equal(generated[0], generated[^2]);
+            int q = resolution / 4;
+            Assert.Equal(new float3(-1, 0, 0), actual[0]);
+            Assert.Equal(new float3(0, 1, 0), actual[q]);
+            Assert.Equal(new float3(1, 0, 0), actual[2*q]);
+            Assert.Equal(new float3(0, -1, 0), actual[3*q]);
+            foreach(float zero in new[]{actual[0].Y,actual[q].X,actual[2*q].Y,actual[3*q].X})
+                Assert.Equal(0,BitConverter.SingleToInt32Bits(zero));
+            for (int i = 0; i < resolution; i++)
+            {
+                var a = actual[i]; var b = actual[(i+q)%resolution];
+                Assert.Equal(a.Y, b.X); Assert.Equal(-a.X, b.Y);
+                var mirror = actual[(q-i+resolution)%resolution];
+                Assert.Equal(-a.Y, mirror.X); Assert.Equal(-a.X, mirror.Y);
+                Assert.InRange(Math.Abs(Math.Sqrt((double)a.X*a.X+(double)a.Y*a.Y)-1), 0, 1e-6);
+                Assert.True((a.X == 0 || float.IsNormal(a.X)) && (a.Y == 0 || float.IsNormal(a.Y)));
+            }
             Assert.True(indices.ToSpan<uint>().SequenceEqual(adapter.Indices));
         }
     }
