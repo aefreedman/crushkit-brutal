@@ -16,6 +16,8 @@ public sealed class ImGuiInspector : VulkanInspector
     public InspectorSettings Settings { get; }
     private readonly Action? _drawControls;
     public FrameTimeHistory? FrameHistory { get; }
+    /// <summary>Optional immutable application-owned theme, retained by reference.</summary>
+    public InspectorTheme? Theme { get; }
     /// <summary>Controls only the kit diagnostics window, not application UI, capture or context lifetime.
     /// Set on the renderer thread; consumers own persistence of this choice.</summary>
     public bool DiagnosticsVisible { get; set; }
@@ -35,16 +37,25 @@ public sealed class ImGuiInspector : VulkanInspector
     /// Collect observations explicitly outside UI drawing; the callback has the same UI-only contract
     /// as the two-argument overload.</summary>
     public ImGuiInspector(InspectorSettings settings, Action? drawControls, FrameTimeHistory? frameTimeHistory)
+        : this(settings, drawControls, frameTimeHistory, null) { }
+
+    /// <summary>Creates an inspector with an optional explicit theme. Existing overloads leave native
+    /// appearance untouched. Theme colors/metrics are applied on context creation and font-size/DPI changes.</summary>
+    public ImGuiInspector(InspectorSettings settings, Action? drawControls, FrameTimeHistory? frameTimeHistory,
+        InspectorTheme? theme)
     {
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _drawControls = drawControls;
         FrameHistory = frameTimeHistory;
+        Theme = theme;
         DiagnosticsVisible = settings.DiagnosticsVisible;
     }
     internal override bool InitiallyVisible => Settings.Visible;
     private ImGuiContextPtr _uiContext;
     private ImFontPtr _inspectorFont;
     private bool _hasUiContext, _uiFrame;
+    private bool _themeApplied;
+    private float _themeFontSize;
     private GlfwBackend? _uiPlatform;
     private VulkanBackend? _uiRenderer;
     private GenericTexture? _debugPixels, _previewPixels;
@@ -64,10 +75,19 @@ public sealed class ImGuiInspector : VulkanInspector
         ResourceLifetime.OnFailure(() => Ensure(renderer, Settings), Release);
         Ui.SetCurrentContext(_uiContext);
         _uiRenderer!.NewFrame(); _uiPlatform!.NewFrame();
-        Ui.GetStyle().FontSizeBase = InspectorFont.LogicalSize(Settings.FontSize, Ui.GetIO().DisplayFramebufferScale);
+        float logicalFontSize = InspectorFont.LogicalSize(Settings.FontSize, Ui.GetIO().DisplayFramebufferScale);
+        Ui.GetStyle().FontSizeBase = logicalFontSize;
+        ApplyTheme(logicalFontSize);
         Ui.NewFrame(); _uiFrame = true;
         DrawControls();
         return new(Ui.GetIO().WantCaptureMouse, Ui.GetIO().WantCaptureKeyboard, false);
+    }
+
+    private void ApplyTheme(float logicalFontSize)
+    {
+        if (Theme is null || (_themeApplied && _themeFontSize == logicalFontSize)) return;
+        Theme.Apply(logicalFontSize);
+        _themeFontSize = logicalFontSize; _themeApplied = true;
     }
 
     private void Ensure(VulkanRenderer renderer, InspectorSettings s)
@@ -297,7 +317,7 @@ public sealed class ImGuiInspector : VulkanInspector
         if (_uiPlatform != null) releases.Add(_uiPlatform.Dispose);
         if (_hasUiContext) releases.Add(() => Ui.DestroyContext(_uiContext));
         try { ResourceLifetime.ReleaseAll(releases.ToArray()); }
-        finally { _uiRenderer = null; _uiPlatform = null; _hasUiContext = false; _inspectorFont = default; _restoreDiagnostics = true; }
+        finally { _uiRenderer = null; _uiPlatform = null; _hasUiContext = false; _inspectorFont = default; _restoreDiagnostics = true; _themeApplied = false; }
     }
 
     public override void Dispose()
