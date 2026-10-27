@@ -262,7 +262,7 @@ public sealed class InspectorControlsTests
     {
         var previous = Ui.GetCurrentContext();
         var settings = Settings();
-        typeof(InspectorSettings).GetField("<ImageSize>k__BackingField", PrivateInstance)!.SetValue(settings, 256f);
+        typeof(InspectorPreviewSettings).GetField("<ImageSize>k__BackingField", PrivateInstance)!.SetValue(settings.Preview, 256f);
         using var inspector = new ImGuiInspector(settings);
         Field("_hasDiagnosticsBounds").SetValue(inspector, true);
         Field("_diagnosticsPosition").SetValue(inspector, new float2(100, 16));
@@ -286,7 +286,9 @@ public sealed class InspectorControlsTests
                 // Visible frames use a CPU texture stand-in; clipped frames have no texture/renderer.
                 Field("_hasPreviewReference").SetValue(inspector, !clipped);
                 Field("_recordedImage").SetValue(inspector, false);
-                typeof(ImGuiInspector).GetMethod("DrawPreview", PrivateInstance)!.Invoke(inspector, [null]);
+                if (clipped) Field("_previewPixels").SetValue(inspector, null); // Also forbid CPU decode (fixture path is null).
+                try { typeof(ImGuiInspector).GetMethod("DrawPreview", PrivateInstance)!.Invoke(inspector, [null]); }
+                finally { Field("_previewPixels").SetValue(inspector, pixels); }
                 float height = Ui.GetItemRectSize().Y;
                 if (clipped)
                 {
@@ -354,7 +356,7 @@ public sealed class InspectorControlsTests
     {
         var previous = Ui.GetCurrentContext();
         var settings = Settings();
-        typeof(InspectorSettings).GetField("<ImageSize>k__BackingField", PrivateInstance)!.SetValue(settings, 256f);
+        typeof(InspectorPreviewSettings).GetField("<ImageSize>k__BackingField", PrivateInstance)!.SetValue(settings.Preview, 256f);
         using var inspector = new ImGuiInspector(settings);
         Field("_hasDiagnosticsBounds").SetValue(inspector, true);
         Field("_diagnosticsPosition").SetValue(inspector, new float2(392, 16));
@@ -395,6 +397,95 @@ public sealed class InspectorControlsTests
         }
     }
 
+    [Fact]
+    public void ControlsOnlySettingsNeedNoImageAndDiagnosticsCanRemainHidden()
+    {
+        string font = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".ttf");
+        File.WriteAllBytes(font, [0, 1, 0, 0, 0, 0, 0, 0]); // Header validation only; no native font load.
+        var previous = Ui.GetCurrentContext();
+        try
+        {
+            var settings = new InspectorSettings(font, 22, true, 0, 0, 400, 300, false);
+            Assert.Null(settings.Preview); Assert.Null(settings.ImagePath);
+            int calls = 0;
+            var history = new FrameTimeHistory(8); history.Observe(0, 16);
+            using var inspector = new ImGuiInspector(settings, () =>
+            {
+                calls++; Ui.Begin("Application"u8); try { Ui.Text("Controls without a fixture"u8); } finally { Ui.End(); }
+            }, history);
+            Assert.False(inspector.DiagnosticsVisible);
+            AttachCpuFrame(inspector);
+            for (int i = 0; i < 3; i++)
+            {
+                if (i > 0) { Ui.NewFrame(); Field("_uiFrame").SetValue(inspector, true); }
+                Invoke(inspector, "DrawControls");
+                typeof(ImGuiInspector).GetMethod("Prepare", PrivateInstance)!.Invoke(inspector,
+                    [null, new CrushKit.Brutal.Vulkan.OverlayFrame([], new("Ready", "", 16, 0, 0, 0)), null]);
+                Assert.Null(Field("_previewPixels").GetValue(inspector));
+                Assert.False((bool)Field("_recordedInspector").GetValue(inspector)!);
+            }
+            Assert.Equal(3, calls); Assert.Equal(1, history.Count);
+            inspector.DiagnosticsVisible = true;
+            Ui.NewFrame(); Field("_uiFrame").SetValue(inspector, true);
+            Invoke(inspector, "DrawControls");
+            typeof(ImGuiInspector).GetMethod("Prepare", PrivateInstance)!.Invoke(inspector,
+                [null, new CrushKit.Brutal.Vulkan.OverlayFrame([], new("Ready", "", 16, 0, 0, 0)), null]);
+            Assert.Equal(4, calls); Assert.Equal(1, history.Count);
+            Assert.True((bool)Field("_recordedInspector").GetValue(inspector)!);
+            Assert.Null(Field("_previewPixels").GetValue(inspector));
+        }
+        finally { File.Delete(font); Ui.SetCurrentContext(previous); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ImmutablePreviewCoverageIsComputedOnlyOnceAndSurvivesContextRetirement(bool lateAlpha)
+    {
+        var settings = Settings();
+        using var inspector = new ImGuiInspector(settings);
+        var pixels = global::Brutal.TextureApi.Abstractions.GenericTexture.Defaults.RGBA8UNorm(new int2(64, 64));
+        pixels.Data.Fill(0);
+        if (lateAlpha) pixels.Data[^1] = 255;
+        Field("_previewPixels").SetValue(inspector, pixels);
+        var ensure = typeof(ImGuiInspector).GetMethod("EnsurePreviewPixels", PrivateInstance)!;
+        ensure.Invoke(inspector, [settings.Preview]);
+        Assert.True((bool)Field("_hasPreviewCoverage").GetValue(inspector)!);
+        Assert.Equal(lateAlpha, (bool)Field("_previewHasCoverage").GetValue(inspector)!);
+        // A mutable test alias proves subsequent calls do not rescan. Production pixels are privately owned.
+        pixels.Data.Fill(lateAlpha ? (byte)0 : (byte)255);
+        for (int i = 0; i < 3; i++) ensure.Invoke(inspector, [settings.Preview]);
+        Invoke(inspector, "Release");
+        ensure.Invoke(inspector, [settings.Preview]);
+        Assert.Equal(lateAlpha, (bool)Field("_previewHasCoverage").GetValue(inspector)!);
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(640)]
+    public void HistoryDrawingDoesNotCollectAndBalancesFramesForFlatAndDenseData(int width)
+    {
+        var previous = Ui.GetCurrentContext();
+        var history = new FrameTimeHistory(64);
+        for (int i = 0; i < 64; i++) history.Observe(i, i == 19 ? 80 : 16);
+        using var inspector = new ImGuiInspector(Settings(), frameTimeHistory: history);
+        try
+        {
+            AttachCpuFrame(inspector);
+            for (int i = 0; i < 3; i++)
+            {
+                Ui.SetNextWindowSize(new float2(width, 400));
+                Ui.Begin("History test"u8);
+                try { Invoke(inspector, "DrawHistory"); }
+                finally { Ui.End(); }
+                Assert.Equal(64, history.Count);
+                Assert.Equal(80, history.Statistics.MaximumMilliseconds);
+                NextCpuFrame();
+            }
+        }
+        finally { inspector.Dispose(); Ui.SetCurrentContext(previous); }
+    }
+
     private static bool Section(string name, bool open)
     {
         object[] args = [name, open];
@@ -409,9 +500,15 @@ public sealed class InspectorControlsTests
         Assert.Equal(w, Ui.GetWindowSize().X, 2); Assert.Equal(h, Ui.GetWindowSize().Y, 2);
     }
 
-    private static InspectorSettings Settings() =>
+    private static InspectorSettings Settings()
+    {
         // No asset loading: settings validation is independent of callback/frame ownership.
-        (InspectorSettings)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(InspectorSettings));
+        var settings = (InspectorSettings)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(InspectorSettings));
+        var preview = (InspectorPreviewSettings)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(InspectorPreviewSettings));
+        typeof(InspectorPreviewSettings).GetField("<ImageSize>k__BackingField", PrivateInstance)!.SetValue(preview, 96f);
+        typeof(InspectorSettings).GetField("<Preview>k__BackingField", PrivateInstance)!.SetValue(settings, preview);
+        return settings;
+    }
 
     private static void AttachCpuFrame(ImGuiInspector inspector)
     {

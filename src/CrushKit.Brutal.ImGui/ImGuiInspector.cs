@@ -15,6 +15,10 @@ public sealed class ImGuiInspector : VulkanInspector
 {
     public InspectorSettings Settings { get; }
     private readonly Action? _drawControls;
+    public FrameTimeHistory? FrameHistory { get; }
+    /// <summary>Controls only the kit diagnostics window, not application UI, capture or context lifetime.
+    /// Set on the renderer thread; consumers own persistence of this choice.</summary>
+    public bool DiagnosticsVisible { get; set; }
 
     /// <summary>Creates an inspector with optional application UI.</summary>
     /// <param name="settings">Validated inspector assets and layout, retained by reference.</param>
@@ -24,10 +28,13 @@ public sealed class ImGuiInspector : VulkanInspector
     /// balance all UI scopes (also on exceptions). UI only: do not call NewFrame, Render, EndFrame, change
     /// or destroy contexts, or dispose the renderer/inspector. Exceptions cancel the frame, retire the
     /// context/backends at the renderer's fence boundary, and propagate. A later begin recreates them.</param>
-    public ImGuiInspector(InspectorSettings settings, Action? drawControls = null)
+    /// <param name="frameTimeHistory">Optional owner-thread history, collected explicitly by the host outside drawing.</param>
+    public ImGuiInspector(InspectorSettings settings, Action? drawControls = null, FrameTimeHistory? frameTimeHistory = null)
     {
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _drawControls = drawControls;
+        FrameHistory = frameTimeHistory;
+        DiagnosticsVisible = settings.DiagnosticsVisible;
     }
     internal override bool InitiallyVisible => Settings.Visible;
     private ImGuiContextPtr _uiContext;
@@ -39,11 +46,12 @@ public sealed class ImGuiInspector : VulkanInspector
     private VulkanRenderer.OverlayGpuTexture? _previewGpu;
     private ImTextureRef _previewReference;
     private bool _hasPreviewReference, _recordedImage, _recordedInspector;
+    private bool _hasPreviewCoverage, _previewHasCoverage;
     private VulkanRenderer? _renderer;
     // Physical-pixel session state survives context retirement; never written to an ini file.
     private float2 _diagnosticsPosition, _diagnosticsSize, _lastScale;
     private bool _hasDiagnosticsBounds, _restoreDiagnostics = true, _diagnosticsCollapsed;
-    private bool _previewOpen = true, _renderingOpen, _textOpen, _fontOpen;
+    private bool _previewOpen = true, _historyOpen = true, _renderingOpen, _textOpen, _fontOpen;
 
     internal override OverlayCapture BeginFrame(VulkanRenderer renderer)
     {
@@ -59,8 +67,6 @@ public sealed class ImGuiInspector : VulkanInspector
 
     private void Ensure(VulkanRenderer renderer, InspectorSettings s)
     {
-        _debugPixels ??= OverlayPixels.LoadPng(s.ImagePath, s.MaxTextureDimension, s.MaxEncodedImageBytes);
-        _previewPixels ??= OverlayPixels.CreateInspectorPreview(_debugPixels);
         if (!_hasUiContext)
         {
             _uiContext = Ui.CreateContext();
@@ -84,6 +90,13 @@ public sealed class ImGuiInspector : VulkanInspector
     {
         _recordedImage = _recordedInspector = false;
         Ui.SetCurrentContext(_uiContext);
+        if (DiagnosticsVisible) DrawDiagnostics(renderer, frame, text);
+        Ui.Render(); _uiFrame = false;
+        return new(Ui.GetDrawData().TotalIdxCount, _recordedImage, _recordedInspector);
+    }
+
+    private void DrawDiagnostics(VulkanRenderer renderer, OverlayFrame frame, OverlayText text)
+    {
         var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
         bool expanded = BeginDiagnostics();
         try
@@ -91,23 +104,41 @@ public sealed class ImGuiInspector : VulkanInspector
             if (expanded)
             {
                 DrawOverview(frame.Diagnostics);
-                if (Section("Preview", ref _previewOpen)) DrawPreview(renderer);
+                if (FrameHistory is not null && Section("Frame history", ref _historyOpen)) DrawHistory();
+                if (Settings.Preview is not null && Section("Preview", ref _previewOpen)) DrawPreview(renderer);
                 if (Section("Rendering", ref _renderingOpen))
-                    Rows("rendering", ("Shape frames", $"{frame.Diagnostics.PresentedShapeFrames}"),
+                    Rows("rendering"u8, ("Shape frames", $"{frame.Diagnostics.PresentedShapeFrames}"),
                         ("Vertices", $"{frame.Diagnostics.ShapeVertices}"), ("Indices", $"{frame.Diagnostics.ShapeIndices}"),
                         ("Overlay frames", $"{renderer.OverlayEvidence.PresentedFrames}"));
                 if (Section("Text cache", ref _textOpen))
-                    Rows("text", ("Entries", $"{text.Count}"), ("Rasterizations", $"{text.Rasterizations}"), ("Hits", $"{text.CacheHits}"));
+                    Rows("text"u8, ("Entries", $"{text.Count}"), ("Rasterizations", $"{text.Rasterizations}"), ("Hits", $"{text.CacheHits}"));
                 if (Section("Font", ref _fontOpen))
-                    Rows("font", ("Inspector TTF", $"{_inspectorFont.GetDebugName()}"),
+                    Rows("font"u8, ("Inspector TTF", $"{_inspectorFont.GetDebugName()}"),
                         ("Logical px", $"{Ui.GetFontSize():F2}"), ("Physical px", $"{Ui.GetFontSize() * scale.Y:F2}"),
                         ("Framebuffer scale", $"{scale.X:F2} x {scale.Y:F2}"), ("Raster density", $"{Ui.GetFontBaked().RasterizerDensity:F2}"));
                 _recordedInspector = Visible(Ui.GetWindowPos(), Ui.GetWindowPos() + Ui.GetWindowSize(), io.DisplaySize);
             }
         }
         finally { EndDiagnostics(); }
-        Ui.Render(); _uiFrame = false;
-        return new(Ui.GetDrawData().TotalIdxCount, _recordedImage, _recordedInspector);
+    }
+
+    private void DrawHistory()
+    {
+        var history = FrameHistory!; var stats = history.Statistics;
+        Ui.TextWrapped("Host-observed elapsed frame time (ms); not GPU duration."u8);
+        if (stats.Count == 0) { Ui.TextWrapped("No frame observations."u8); return; }
+        Rows("history"u8, ("Samples", $"{stats.Count} / {history.Capacity}"),
+            ("Min / mean / max", $"{stats.MinimumMilliseconds:F2} / {stats.MeanMilliseconds:F2} / {stats.MaximumMilliseconds:F2} ms"));
+        float width = Ui.GetContentRegionAvail().X;
+        float innerWidth = width - Ui.GetStyle().FramePadding.X * 2;
+        float height = Ui.GetFrameHeight() * 3;
+        if (innerWidth < 3 || !Ui.IsRectVisible(new float2(width, height))) { Ui.Dummy(new float2(Math.Max(0, width), height)); return; }
+        // Keep every envelope point below native PlotLines' horizontal resolution so it cannot skip extrema.
+        int points = (int)Math.Min(history.Capacity, Math.Floor(innerWidth));
+        var values = history.PlotValues(points);
+        Ui.PlotLines("##frame-history"u8, values, 0, default, 0,
+            (float)Math.Max(1, stats.MaximumMilliseconds), new float2(width, height));
+        Ui.SetItemTooltip("Oldest to newest. Dense buckets retain min/max; collection happens outside UI drawing."u8);
     }
 
     private bool BeginDiagnostics()
@@ -161,15 +192,23 @@ public sealed class ImGuiInspector : VulkanInspector
     private static bool Section(string label, ref bool open)
     {
         Ui.SetNextItemOpen(open, ImGuiCond.Always);
-        return open = Ui.CollapsingHeader(Encoding.UTF8.GetBytes(label));
+        return open = label switch
+        {
+            "Preview" => Ui.CollapsingHeader("Preview"u8),
+            "Frame history" => Ui.CollapsingHeader("Frame history"u8),
+            "Rendering" => Ui.CollapsingHeader("Rendering"u8),
+            "Text cache" => Ui.CollapsingHeader("Text cache"u8),
+            "Font" => Ui.CollapsingHeader("Font"u8),
+            _ => Ui.CollapsingHeader(Encoding.UTF8.GetBytes(label)),
+        };
     }
 
     private static void DrawOverview(OverlayDiagnostics diagnostics) =>
-        Rows("overview", ("State", diagnostics.State), ("Details", diagnostics.Detail), ("Frame", $"{diagnostics.FrameMilliseconds:F2} ms"));
+        Rows("overview"u8, ("State", diagnostics.State), ("Details", diagnostics.Detail), ("Frame", $"{diagnostics.FrameMilliseconds:F2} ms"));
 
-    private static void Rows(string id, params (string Label, string Value)[] rows)
+    private static void Rows(ReadOnlySpan<byte> id, params (string Label, string Value)[] rows)
     {
-        if (!Ui.BeginTable(Encoding.UTF8.GetBytes(id), 2, ImGuiTableFlags.SizingStretchProp)) return;
+        if (!Ui.BeginTable(id, 2, ImGuiTableFlags.SizingStretchProp)) return;
         try
         {
             Ui.TableSetupColumn("Label"u8, ImGuiTableColumnFlags.WidthStretch, 0.36f);
@@ -185,12 +224,14 @@ public sealed class ImGuiInspector : VulkanInspector
 
     private void DrawPreview(VulkanRenderer renderer)
     {
+        var preview = Settings.Preview;
+        if (preview is null) return;
         var io = Ui.GetIO(); var scale = io.DisplayFramebufferScale;
         var available = Ui.GetContentRegionAvail();
         // Preserve physical aspect ratio, fit both the column and remaining usable body.
-        float factor = Math.Min(1, Math.Min(available.X * scale.X / Settings.ImageSize, available.Y * scale.Y / Settings.ImageSize));
-        if (factor <= 0 || !OverlayPixels.HasCoverage(_previewPixels!)) return;
-        var imageSize = new float2(Settings.ImageSize * factor / scale.X, Settings.ImageSize * factor / scale.Y);
+        float factor = Math.Min(1, Math.Min(available.X * scale.X / preview.ImageSize, available.Y * scale.Y / preview.ImageSize));
+        if (factor <= 0) return;
+        var imageSize = new float2(preview.ImageSize * factor / scale.X, preview.ImageSize * factor / scale.Y);
         var min = Ui.GetCursorScreenPos();
         if (!Ui.IsRectVisible(imageSize) || !Visible(min, min + imageSize, io.DisplaySize))
         {
@@ -198,6 +239,8 @@ public sealed class ImGuiInspector : VulkanInspector
             Ui.Dummy(imageSize);
             return;
         }
+        EnsurePreviewPixels(preview);
+        if (!_previewHasCoverage) { Ui.Dummy(imageSize); return; }
         if (!_hasPreviewReference)
         {
             _previewGpu = renderer.UploadOverlayTexture(_previewPixels!, gameDescriptor: false);
@@ -207,6 +250,20 @@ public sealed class ImGuiInspector : VulkanInspector
         var drawList = Ui.GetWindowDrawList(); int before = drawList.IdxBuffer.Count;
         Ui.Image(_previewReference, imageSize);
         _recordedImage = drawList.IdxBuffer.Count > before;
+    }
+
+    private void EnsurePreviewPixels(InspectorPreviewSettings preview)
+    {
+        if (_previewPixels is null)
+        {
+            _debugPixels ??= OverlayPixels.LoadPng(preview.ImagePath, preview.MaxTextureDimension, preview.MaxEncodedImageBytes);
+            _previewPixels = OverlayPixels.CreateInspectorPreview(_debugPixels);
+        }
+        if (!_hasPreviewCoverage)
+        {
+            _previewHasCoverage = OverlayPixels.HasCoverage(_previewPixels);
+            _hasPreviewCoverage = true;
+        }
     }
 
     // BeginOverlayFrame retires context/backends after the shared fence on any BeginFrame failure.
