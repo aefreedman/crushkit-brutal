@@ -100,7 +100,20 @@ public static class ToolLayout
     /// <remarks>Dispose after drawing the control. Help is attached to the label, not a substitute
     /// for an always-visible validation warning. A row does not own/edit the supplied value.</remarks>
     public static ToolLayoutScope PropertyRow(ReadOnlySpan<byte> id, ReadOnlySpan<byte> label,
-        float minimumControlWidth, ReadOnlySpan<byte> help = default)
+        float minimumControlWidth, ReadOnlySpan<byte> help = default) =>
+        PropertyRowCore(id, label, minimumControlWidth, help, default, null);
+
+    /// <summary>Cached application label, subdued units/effect metadata and structured help.
+    /// This overload does not infer ranges/types, disable widgets or own the edited value.</summary>
+    public static ToolLayoutScope PropertyRow(ToolProperty property, float minimumControlWidth)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+        return PropertyRowCore(property.IdUtf8, property.LabelUtf8, minimumControlWidth,
+            default, property.MetadataUtf8, property.Help);
+    }
+
+    private static ToolLayoutScope PropertyRowCore(ReadOnlySpan<byte> id, ReadOnlySpan<byte> label,
+        float minimumControlWidth, ReadOnlySpan<byte> help, ReadOnlySpan<byte> metadata, ToolHelp? structuredHelp)
     {
         ValidateId(id); ValidateWidth(minimumControlWidth);
         var style = Ui.GetStyle();
@@ -121,6 +134,12 @@ public static class ToolLayout
             Ui.AlignTextToFramePadding();
             Ui.TextWrapped(label);
             if (!help.IsEmpty) Ui.SetItemTooltip(help);
+            structuredHelp?.ShowForLastItem();
+            if (!metadata.IsEmpty)
+            {
+                ToolHelp.Muted(metadata);
+                structuredHelp?.ShowForLastItem();
+            }
             if (!wide) Ui.TableNextRow();
             bool visible = Ui.TableNextColumn();
             Ui.SetNextItemWidth(-1);
