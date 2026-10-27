@@ -175,6 +175,50 @@ public sealed class ToolControlsTests
         });
     }
 
+    [Theory]
+    [InlineData(90, 300)]
+    [InlineData(600, 1400)]
+    public void StructuredTooltipHasReadableWidthFromItsFirstFrameEvenInsideANarrowTable(int hostWidth, int viewportWidth)
+    {
+        InContext(() =>
+        {
+            Ui.GetIO().DisplaySize = new float2(viewportWidth, 900);
+            var help = new ToolHelp("Simulation speed", "Changes the speed of active balls without resetting the current run.",
+                "Drag to adjust; Ctrl-click for an exact value.", "Resume the simulation to edit this setting.");
+            var property = new ToolProperty("speed", "Speed");
+            float2 point = default;
+            int appearances = 0;
+            void Draw()
+            {
+                using var row = ToolLayout.PropertyRow(property, 140);
+                if (!row.ContentVisible) return;
+                Ui.BeginDisabled();
+                try
+                {
+                    Ui.Button("Value"u8);
+                    point = (Ui.GetItemRectMin() + Ui.GetItemRectMax()) / 2;
+                    if (!help.ShowForLastItem(disabled: true)) return;
+                    appearances++;
+                    var windows = Ui.GetCurrentContext().Windows;
+                    for (int i = 0; i < windows.Count; i++)
+                    {
+                        var window = windows[i];
+                        if ((window.Flags & ImGuiWindowFlags.Tooltip) == 0) continue;
+                        // Cursor extents measure this frame's actual text, not the previous auto-fit size.
+                        var extent = window.DC.CursorMaxPos - window.DC.CursorStartPos;
+                        Assert.InRange(extent.X, Ui.GetFontSize() * 12, viewportWidth);
+                        Assert.InRange(extent.Y, Ui.GetFontSize(), Ui.GetFontSize() * 20);
+                    }
+                }
+                finally { Ui.EndDisabled(); }
+            }
+            Frame(hostWidth, Draw); Frame(hostWidth, Draw);
+            Ui.GetIO().AddMousePosEvent(point.X, point.Y);
+            for (int i = 0; i < 30; i++) Frame(hostWidth, Draw);
+            Assert.True(appearances > 1);
+        });
+    }
+
     [Fact]
     public void DisabledNumericControlsRetainValuesAndVisibleReason()
     {

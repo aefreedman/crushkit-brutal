@@ -25,7 +25,17 @@ public sealed class ToolHelp
     public bool ShowForLastItem(bool disabled = false)
     {
         if (!Ui.IsItemHovered(ImGuiHoveredFlags.ForTooltip | ImGuiHoveredFlags.AllowWhenDisabled) || !Ui.BeginTooltip()) return false;
-        try { DrawContent(disabled); }
+        try
+        {
+            // A new auto-sized tooltip has no useful content width yet. Wrapping to its
+            // available region creates one-character columns and reinforces that size.
+            var style = Ui.GetStyle();
+            float available = Ui.GetIO().DisplaySize.X - 2 * (style.WindowPadding.X + style.DisplaySafeAreaPadding.X);
+            float width = Math.Min(Ui.GetFontSize() * 35, Math.Max(Ui.GetFontSize(), available));
+            Ui.PushTextWrapPos(style.WindowPadding.X + width);
+            try { DrawContent(disabled); }
+            finally { Ui.PopTextWrapPos(); }
+        }
         finally { Ui.EndTooltip(); }
         return true;
     }
