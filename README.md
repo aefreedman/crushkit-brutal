@@ -2,7 +2,7 @@
 
 A small, composable C# game kit built on published BRUTAL packages. This is the BRUTAL successor to the older Unity-era CrushKit idea, not a rewrite of that repository or a full scene/entity engine.
 
-**Local prerelease only.** These packages are not published. Source licence selection, source/asset ownership review, exact public-tree/history review and publication approval remain pending. No open-source licence grant or release clearance is implied.
+**Licence: MPL 2.0.** Original CrushKit material is covered by [LICENSE](LICENSE); see [licensing scope and dependency obligations](LICENSING.md). Third-party material keeps its own licences. Source: [aefreedman/crushkit-brutal](https://github.com/aefreedman/crushkit-brutal). NuGet packages remain local prereleases, not publicly published; existing immutable previews have not been repacked.
 
 ## Modules
 
@@ -56,6 +56,8 @@ See the [Draw2D API reference](docs/draw2d.md) for concrete primitive/stroke usa
 The existing shape geometry restrictions remain: convex closed outlines, bounded curve/pattern complexity, float32 representability checks and transactional rejection rather than general path union or silent repair. The extraction does not expand geometric capabilities or introduce another graphics backend.
 
 ## Build, test and pack
+
+GitHub CI runs one Windows Debug source build and the seven CPU/headless test projects using `pwsh -File .github/scripts/ci.ps1`. Actions are SHA-pinned with read-only permissions; grouped monthly Actions/NuGet updates require review. CI does not run GPU/visible/device tests, benchmarks, package packing or publication. See [contribution guidance](CONTRIBUTING.md) and [private security reporting](SECURITY.md).
 
 From this repository:
 
@@ -121,6 +123,6 @@ Breakout retains game integration tests and its hidden overlay/gameplay harness;
 
 ## Publication gates
 
-No remote, public package or source licence is configured by this extraction. Confirm the intended `crushkit-brutal` repository and `CrushKit.Brutal.*` IDs/prefix ownership before publishing. Preserve the existing Unity predecessor. Review all intended public files/refs and dependency/asset provenance, choose a source licence, and obtain explicit publication approval.
+MPL 2.0 is selected for original CrushKit material, without the Incompatible With Secondary Licenses designation. The public GitHub source repository is approved; NuGet package publication remains a separate decision. Confirm the intended `crushkit-brutal` repository and `CrushKit.Brutal.*` IDs/prefix ownership before publishing. Preserve the existing Unity predecessor. Review all intended public files/refs and dependency/asset provenance, and obtain explicit publication approval. Future packages must use fresh versions rather than overwrite existing previews.
 
 BRUTAL is not plain MIT: consult the actual licence for credits, pre-game logo/permission and NOTICE requirements before distributing products. Copying notices alone does not satisfy all obligations. Public source visibility and compiled-game distribution are separate decisions.

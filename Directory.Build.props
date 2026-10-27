@@ -10,9 +10,12 @@
     <Authors>CrushKit contributors</Authors>
     <Description>Focused game development modules built on BRUTAL.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
   </PropertyGroup>
   <ItemGroup Condition="'$(IsPackable)' != 'false'">
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSING.md" Pack="true" PackagePath="/" />
     <None Include="$(MSBuildThisFileDirectory)docs/**/*" Pack="true" PackagePath="docs/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
