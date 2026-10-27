@@ -29,6 +29,51 @@ public sealed class ToolControlsTests
     }
 
     [Fact]
+    public void UnitSuffixesAreImmutableLiteralTextNotNativeFormatArguments()
+    {
+        static string Format(object descriptor) => System.Text.Encoding.UTF8.GetString((byte[])descriptor.GetType()
+            .GetField("_format", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(descriptor)!);
+        var original = ToolDoubleEditor.Drag(0, 100, .1f, "%.3f");
+        var decorated = original.WithSuffix("µs / 100% %n");
+        Assert.Empty(original.Suffix); Assert.Equal("%.3f", Format(original));
+        Assert.Equal("%.3f µs / 100%% %%n", Format(decorated));
+        Assert.Equal(original.Format, decorated.Format); Assert.Equal(original.Mode, decorated.Mode);
+        Assert.Equal(original.Minimum, decorated.Minimum); Assert.Equal(original.Maximum, decorated.Maximum);
+        Assert.Equal(original.DragSpeed, decorated.DragSpeed);
+        Assert.Equal("%lld physical px", Format(ToolInt64Editor.Input().WithSuffix("physical px")));
+        Assert.Equal("%.17g", Format(ToolDoubleEditor.Input("%.17g").WithSuffix("")));
+        Assert.Throws<ArgumentNullException>(() => original.WithSuffix(null!));
+        foreach (string invalid in new[] { "bad\0unit", "bad\nunit", "bad\runit", "bad\tunit" })
+        {
+            Assert.Throws<ArgumentException>(() => original.WithSuffix(invalid));
+            Assert.Throws<ArgumentException>(() => ToolInt64Editor.Input().WithSuffix(invalid));
+        }
+    }
+
+    [Fact]
+    public void NativeDoubleInputAcceptsExactNumbersWithoutTypingTheDisplayedUnits()
+    {
+        InContext(() =>
+        {
+            double value = 3.5;
+            var editor = ToolDoubleEditor.Input("%.17g").WithSuffix("seconds");
+            void Draw(bool focus = false)
+            {
+                if (focus) Ui.SetKeyboardFocusHere();
+                ToolControls.EditDouble("value"u8, ref value, editor);
+            }
+            Frame(600, () => Draw(true)); Frame(600, () => Draw());
+            var io = Ui.GetIO();
+            io.AddKeyEvent(ImGuiKey.Mod_Ctrl, true); io.AddKeyEvent(ImGuiKey.A, true); Frame(600, () => Draw());
+            io.AddKeyEvent(ImGuiKey.A, false); io.AddKeyEvent(ImGuiKey.Mod_Ctrl, false); Frame(600, () => Draw());
+            io.AddInputCharactersUTF8("123.45678901234567"u8); Frame(600, () => Draw());
+            io.AddKeyEvent(ImGuiKey.Enter, true); Frame(600, () => Draw());
+            io.AddKeyEvent(ImGuiKey.Enter, false); Frame(600, () => Draw());
+            Assert.Equal(123.45678901234567, value);
+        });
+    }
+
+    [Fact]
     public void InputUsesNativeS64WithoutRoundingLargeIntegersAndNeverClampsUneditedValues()
     {
         InContext(() =>
@@ -47,13 +92,14 @@ public sealed class ToolControlsTests
         });
     }
 
-    [Fact]
-    public void ExactNativeTextEntryPreservesInt64AboveDoublePrecision()
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void ExactNativeTextEntryPreservesInt64AboveDoublePrecision(bool suffix)
     {
         InContext(() =>
         {
             long value = 7;
-            var editor = ToolInt64Editor.Input();
+            var editor = suffix ? ToolInt64Editor.Input().WithSuffix("physical px") : ToolInt64Editor.Input();
             void Draw(bool focus = false)
             {
                 if (focus) Ui.SetKeyboardFocusHere();
@@ -70,13 +116,15 @@ public sealed class ToolControlsTests
         });
     }
 
-    [Fact]
-    public void NativeDoubleSliderActuallyEditsWithoutChangingTheDescriptor()
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void NativeDoubleSliderActuallyEditsWithoutChangingTheDescriptor(bool suffix)
     {
         InContext(() =>
         {
             double value = 0;
             var editor = ToolDoubleEditor.Slider(0, 10, "%.3f");
+            if (suffix) editor = editor.WithSuffix("units/s");
             float2 minimum = default, maximum = default;
             void Draw()
             {
@@ -93,13 +141,15 @@ public sealed class ToolControlsTests
         });
     }
 
-    [Fact]
-    public void NativeDragCtrlClickExactEntryIsNotSilentlyClampedToTheUsefulRange()
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void NativeDragCtrlClickExactEntryIsNotSilentlyClampedToTheUsefulRange(bool suffix)
     {
         InContext(() =>
         {
             double value = 1;
             var editor = ToolDoubleEditor.Drag(0, 10, 0.1f, "%.17g");
+            if (suffix) editor = editor.WithSuffix("units/s");
             float2 point = default;
             void Draw()
             {
@@ -345,7 +395,7 @@ public sealed class ToolControlsTests
         InContext(() =>
         {
             var property = new ToolProperty("play.speed", "Speed", "units/s", "Live");
-            var editor = ToolDoubleEditor.Drag(0, 100, 1, "%.3f");
+            var editor = ToolDoubleEditor.Drag(0, 100, 1, "%.3f").WithSuffix("units/s");
             ToolFieldPreset[] presets = [new("Slow"), new("Fast")];
             double value = 1;
             Action draw = () =>

@@ -14,8 +14,10 @@ Numeric helpers accept `enabled` and optional help. They disable only the value 
 
 | Description | Factories | Storage / behavior |
 | --- | --- | --- |
-| `ToolDoubleEditor` | `Input(format)`, `Drag(minimum, maximum, speed, format)`, `Slider(minimum, maximum, format)` | Native `Double`, never a float intermediate. Formats are one safe numeric conversion: `%.0f` through `%.17f`, `%.1g` through `%.17g`, or `%.0e` through `%.17e`. Units belong in metadata, not a printf format. |
+| `ToolDoubleEditor` | `Input(format)`, `Drag(minimum, maximum, speed, format)`, `Slider(minimum, maximum, format)` | Native `Double`, never a float intermediate. Formats are one safe numeric conversion: `%.0f` through `%.17f`, `%.1g` through `%.17g`, or `%.0e` through `%.17e`. Use `WithSuffix("units/s")` for literal units in the value display; the numeric format itself stays restricted. |
 | `ToolInt64Editor` | `Input()`, `Drag(minimum, maximum, speed)`, `Slider(minimum, maximum)` | Native signed `S64`, including exact values above 2^53. Input supports the full Int64 range. Native bounded controls require ordered endpoints inside the signed half-range; use Input for larger domains. |
+
+Both numeric descriptor types provide `WithSuffix(string)`, returning a new immutable descriptor with a cached native format. For example, `ToolDoubleEditor.Drag(0, 100, .1f, "%.3f").WithSuffix("units")` displays `3.500 units`. Percent characters in suffixes are escaped as literal text; NUL and control characters are rejected before native work. Enter only the number when editing; native parsing and exact-entry semantics are preserved. Leave `ToolProperty` units empty when using value suffixes to avoid a duplicate subtitle.
 
 Call `ToolControls.EditDouble(id, ref value, editor, enabled, help, inputFlags)` or `EditInt64` and stage the value only when it returns true. The caller still validates finite/range/integer/application constraints and publishes changes at its owner update. Do not infer integer schema from a JSON number's spelling.
 
@@ -41,10 +43,10 @@ The helper does not restore defaults, choose a selected source, save, write the 
 The range/precision/presets below are illustration choices, not kit defaults. An application's configuration/schema owns its real choices.
 
 ```csharp
-private readonly ToolProperty speedProperty = new("play.speed", "Speed", "units/s", "Live",
+private readonly ToolProperty speedProperty = new("play.speed", "Speed", help:
     new ToolHelp("Movement speed", "Applied by the next owner update.",
         "Drag to adjust; Ctrl-click for exact entry.", "Resume to edit."));
-private readonly ToolDoubleEditor speedEditor = ToolDoubleEditor.Drag(0, 2000, 1, "%.1f");
+private readonly ToolDoubleEditor speedEditor = ToolDoubleEditor.Drag(0, 2000, 1, "%.1f").WithSuffix("units/s");
 private readonly ToolFieldPreset[] speedPresets = [new("Slow"), new("Fast")];
 
 private void DrawSpeed()
@@ -71,6 +73,7 @@ A disposable net10.0 probe used the repository's .NET SDK 10.0.201 pin and exact
 | Exact native numeric storage | `InputScalar(ImString, ImGuiDataType, Brutal.Pointers.Ptr, Ptr, Ptr, ImString, ImGuiInputTextFlags)` with `Double` and `S64` | Reuse native editing/parsing. Small managed descriptors validate/cache presentation; no custom numeric input engine. |
 | Quick adjustment with exact input | `DragScalar(ImString, ImGuiDataType, Ptr, float, Ptr, Ptr, ImString, ImGuiSliderFlags)`, `SliderScalar(ImString, ImGuiDataType, Ptr, Ptr, Ptr, ImString, ImGuiSliderFlags)` | Reuse native dragging/sliding and Ctrl-click entry, not float conversion or guessed clamping. |
 | Disabled explanations / rich help | `BeginDisabled`, `EndDisabled`, `IsItemHovered(ForTooltip \| AllowWhenDisabled)`, `BeginTooltip`, `EndTooltip`, `PushTextWrapPos(float)`, `PopTextWrapPos()`, `TextWrapped`, `PushStyleColor`, `PopStyleColor`, style `Colors[TextDisabled]` | Reuse native disabled state, hover delay and styling. The helper composes caller-authored content only. |
+| Literal numeric units | Existing `InputScalar`, `DragScalar`, `SliderScalar` native format arguments above; offscreen exact Double/S64 entry and slider/drag tests cover decorated formats | Reuse native scalar formatting/parsing. Immutable descriptors escape literal suffix percent characters, reject controls and encode once; no custom numeric parser. |
 | Visible/context actions | `SmallButton`, `IsItemClicked(Right)`, `OpenPopup`, `BeginPopup`, `MenuItem`, `EndPopup` | Reuse native popup/item interactions. Requests and source/preset semantics remain separate. |
 
 Compilation proves API shape, not visual/GPU correctness. Native CPU tests additionally exercise exact S64 entry above double precision, slider editing, drag Ctrl-click exact entry outside the useful range, disabled help, narrow/wide cached metadata, visible action selection, repeated preset captions, and exception scope cleanup. These tests use offscreen CPU contexts, not GLFW windows, GPU resources or visible desktop interaction.

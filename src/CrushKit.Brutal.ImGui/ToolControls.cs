@@ -17,10 +17,11 @@ public sealed class ToolDoubleEditor
     public double Maximum { get; }
     public float DragSpeed { get; }
     public string Format { get; }
+    public string Suffix { get; }
     private readonly byte[] _format;
     internal ReadOnlySpan<byte> FormatUtf8 => _format;
 
-    private ToolDoubleEditor(ToolNumberMode mode, double minimum, double maximum, float speed, string format)
+    private ToolDoubleEditor(ToolNumberMode mode, double minimum, double maximum, float speed, string format, string suffix = "")
     {
         ArgumentNullException.ThrowIfNull(format);
         // Native printf receives only one numeric value. Do not permit arbitrary conversions/arguments.
@@ -35,8 +36,11 @@ public sealed class ToolDoubleEditor
             throw new ArgumentOutOfRangeException(nameof(maximum));
         if (!float.IsFinite(speed) || speed <= 0) throw new ArgumentOutOfRangeException(nameof(speed));
         Mode = mode; Minimum = minimum; Maximum = maximum; DragSpeed = speed;
-        Format = format; _format = Encoding.UTF8.GetBytes(format);
+        Format = format; Suffix = suffix; _format = ToolControls.EncodeNumericFormat(format, suffix);
     }
+
+    /// <summary>Returns an immutable descriptor with a literal unit suffix in the native value display.</summary>
+    public ToolDoubleEditor WithSuffix(string suffix) => new(Mode, Minimum, Maximum, DragSpeed, Format, suffix);
 
     public static ToolDoubleEditor Input(string format) => new(ToolNumberMode.Input, 0, 0, 1, format);
     public static ToolDoubleEditor Drag(double minimum, double maximum, float speed, string format) => new(ToolNumberMode.Drag, minimum, maximum, speed, format);
@@ -51,13 +55,20 @@ public sealed class ToolInt64Editor
     public long Minimum { get; }
     public long Maximum { get; }
     public float DragSpeed { get; }
-    private ToolInt64Editor(ToolNumberMode mode, long minimum, long maximum, float speed)
+    public string Suffix { get; }
+    private readonly byte[] _format;
+    internal ReadOnlySpan<byte> FormatUtf8 => _format;
+    private ToolInt64Editor(ToolNumberMode mode, long minimum, long maximum, float speed, string suffix = "")
     {
         if (mode != ToolNumberMode.Input && (minimum >= maximum || minimum < long.MinValue / 2 || maximum > long.MaxValue / 2))
             throw new ArgumentOutOfRangeException(nameof(minimum), "Native bounded integer controls require ordered half-range endpoints.");
         if (!float.IsFinite(speed) || speed <= 0) throw new ArgumentOutOfRangeException(nameof(speed));
         Mode = mode; Minimum = minimum; Maximum = maximum; DragSpeed = speed;
+        Suffix = suffix; _format = ToolControls.EncodeNumericFormat("%lld", suffix);
     }
+    /// <summary>Returns an immutable descriptor with a literal unit suffix; native S64 storage is unchanged.</summary>
+    public ToolInt64Editor WithSuffix(string suffix) => new(Mode, Minimum, Maximum, DragSpeed, suffix);
+
     public static ToolInt64Editor Input() => new(ToolNumberMode.Input, 0, 0, 1);
     public static ToolInt64Editor Drag(long minimum, long maximum, float speed) => new(ToolNumberMode.Drag, minimum, maximum, speed);
     public static ToolInt64Editor Slider(long minimum, long maximum) => new(ToolNumberMode.Slider, minimum, maximum, 1);
@@ -106,15 +117,24 @@ public static class ToolControls
             fixed (long* pointer = &value)
                 changed = editor.Mode switch
                 {
-                    ToolNumberMode.Input => Ui.InputScalar(id, ImGuiDataType.S64, (Ptr)pointer, default, default, "%lld"u8, inputFlags),
-                    ToolNumberMode.Drag => Ui.DragScalar(id, ImGuiDataType.S64, (Ptr)pointer, editor.DragSpeed, (Ptr)(&min), (Ptr)(&max), "%lld"u8, ImGuiSliderFlags.None),
-                    _ => Ui.SliderScalar(id, ImGuiDataType.S64, (Ptr)pointer, (Ptr)(&min), (Ptr)(&max), "%lld"u8, ImGuiSliderFlags.None)
+                    ToolNumberMode.Input => Ui.InputScalar(id, ImGuiDataType.S64, (Ptr)pointer, default, default, editor.FormatUtf8, inputFlags),
+                    ToolNumberMode.Drag => Ui.DragScalar(id, ImGuiDataType.S64, (Ptr)pointer, editor.DragSpeed, (Ptr)(&min), (Ptr)(&max), editor.FormatUtf8, ImGuiSliderFlags.None),
+                    _ => Ui.SliderScalar(id, ImGuiDataType.S64, (Ptr)pointer, (Ptr)(&min), (Ptr)(&max), editor.FormatUtf8, ImGuiSliderFlags.None)
                 };
         }
         finally { Ui.EndDisabled(); }
         help?.ShowForLastItem(!enabled);
         if (!enabled) help?.DrawDisabledReason();
         return changed;
+    }
+
+    internal static byte[] EncodeNumericFormat(string format, string suffix)
+    {
+        ArgumentNullException.ThrowIfNull(suffix);
+        foreach (char character in suffix)
+            if (char.IsControl(character)) throw new ArgumentException("Unit suffixes must be single-line native text without control characters.", nameof(suffix));
+        // Suffixes are literal text, never additional printf conversions (%n, %s, etc.).
+        return Encoding.UTF8.GetBytes(suffix.Length == 0 ? format : format + " " + suffix.Replace("%", "%%", StringComparison.Ordinal));
     }
 
     private static void ValidateInputFlags(ToolNumberMode mode, ImGuiInputTextFlags flags)

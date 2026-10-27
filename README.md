@@ -16,7 +16,7 @@ A small, composable C# game kit built on published BRUTAL packages.
 | `CrushKit.Brutal.Ecs` | Arch world lifetime, worker jobs with explicit dependencies, queued submissions and awaitable completion |
 | `CrushKit.Brutal.Physics` | Box2D native task scheduling and guarded global world creation/destruction |
 
-Vulkan depends on Draw2D, not ImGui. ImGui depends on Vulkan. None depends on Breakout, its simulation, settings JSON or assets. ImGui is version `0.1.0-preview.15`; the unchanged modules remain `0.1.0-preview.12`. There is no umbrella package. Input and Audio depend on neither graphics nor one another. Bindings, aim priority, cue names/event mapping, focus/pause policy and simulation remain application-owned. Ecs owns generic world/job plumbing, not game components or physics policy; see [Arch hosting and threading constraints](docs/ecs.md). Physics provides the independent [Box2D task bridge](docs/physics-jobs.md), without an Arch dependency. See [input/audio usage and binding constraints](docs/input-audio.md).
+Vulkan depends on Draw2D, not ImGui. ImGui depends on Vulkan. None depends on Breakout, its simulation, settings JSON or assets. ImGui is version `0.1.0-preview.16`; the unchanged modules remain `0.1.0-preview.12`. There is no umbrella package. Input and Audio depend on neither graphics nor one another. Bindings, aim priority, cue names/event mapping, focus/pause policy and simulation remain application-owned. Ecs owns generic world/job plumbing, not game components or physics policy; see [Arch hosting and threading constraints](docs/ecs.md). Physics provides the independent [Box2D task bridge](docs/physics-jobs.md), without an Arch dependency. See [input/audio usage and binding constraints](docs/input-audio.md).
 
 The renderer's optional inspector seam is intentionally kit-internal, not a public arbitrary render-plugin API. The provided `ImGuiInspector` transfers ownership to the renderer when passed to `ConfigureOverlay`; it retires at the shared fence/device-idle boundaries. Overlay label content, diagnostic state/detail strings, layout settings, fonts and images are supplied by the application. The kit ships no game fonts, media or default configuration.
 
@@ -85,7 +85,7 @@ A game references only the modules it needs:
   <PackageReference Include="CrushKit.Brutal.Draw2D" Version="0.1.0-preview.12" />
   <PackageReference Include="CrushKit.Brutal.Vulkan" Version="0.1.0-preview.12" />
   <!-- Optional inspector: -->
-  <PackageReference Include="CrushKit.Brutal.ImGui" Version="0.1.0-preview.15" />
+  <PackageReference Include="CrushKit.Brutal.ImGui" Version="0.1.0-preview.16" />
   <!-- Independent mechanics, if needed: -->
   <PackageReference Include="CrushKit.Brutal.Input" Version="0.1.0-preview.12" />
   <PackageReference Include="CrushKit.Brutal.Audio" Version="0.1.0-preview.12" />
