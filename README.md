@@ -1,6 +1,6 @@
 # CrushKit BRUTAL
 
-A small, composable C# game kit built on published BRUTAL packages. This is the BRUTAL successor to the older Unity-era CrushKit idea, not a rewrite of that repository or a full scene/entity engine.
+A small, composable C# game kit built on published BRUTAL packages.
 
 **Licence: MPL 2.0.** Original CrushKit material is covered by [LICENSE](LICENSE); see [licensing scope and dependency obligations](LICENSING.md). Third-party material keeps its own licences. Source: [aefreedman/crushkit-brutal](https://github.com/aefreedman/crushkit-brutal). NuGet packages remain local prereleases, not publicly published; existing immutable previews have not been repacked.
 
