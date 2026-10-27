@@ -16,7 +16,7 @@ A small, composable C# game kit built on published BRUTAL packages. This is the 
 | `CrushKit.Brutal.Ecs` | Arch world lifetime, worker jobs with explicit dependencies, queued submissions and awaitable completion |
 | `CrushKit.Brutal.Physics` | Box2D native task scheduling and guarded global world creation/destruction |
 
-Vulkan depends on Draw2D, not ImGui. ImGui depends on Vulkan. None depends on Breakout, its simulation, settings JSON or assets. All modules currently share version `0.1.0-preview.10`; there is no umbrella package. Input and Audio depend on neither graphics nor one another. Bindings, aim priority, cue names/event mapping, focus/pause policy and simulation remain application-owned. Ecs owns generic world/job plumbing, not game components or physics policy; see [Arch hosting and threading constraints](docs/ecs.md). Physics provides the independent [Box2D task bridge](docs/physics-jobs.md), without an Arch dependency. See [input/audio usage and binding constraints](docs/input-audio.md).
+Vulkan depends on Draw2D, not ImGui. ImGui depends on Vulkan. None depends on Breakout, its simulation, settings JSON or assets. All modules currently share version `0.1.0-preview.11`; there is no umbrella package. Input and Audio depend on neither graphics nor one another. Bindings, aim priority, cue names/event mapping, focus/pause policy and simulation remain application-owned. Ecs owns generic world/job plumbing, not game components or physics policy; see [Arch hosting and threading constraints](docs/ecs.md). Physics provides the independent [Box2D task bridge](docs/physics-jobs.md), without an Arch dependency. See [input/audio usage and binding constraints](docs/input-audio.md).
 
 The renderer's optional inspector seam is intentionally kit-internal, not a public arbitrary render-plugin API. The provided `ImGuiInspector` transfers ownership to the renderer when passed to `ConfigureOverlay`; it retires at the shared fence/device-idle boundaries. Overlay label content, diagnostic state/detail strings, layout settings, fonts and images are supplied by the application. The kit ships no game fonts, media or default configuration.
 
@@ -35,11 +35,11 @@ A later unsupported surface configuration fails rather than silently changing th
 successfully created swapchain mode (null before creation). Recreation logs both.
 The host owns frame caps and event pumping; no game configuration or simulation timing enters the kit.
 
-## Unreleased baked-mesh alternative
+## Shared meshes
 
-The source branch provides `BakedShapeMesh`, explicit `BakedMeshLimits`, `OrderedShapeDrawList` and a `VulkanRenderer.Draw(OrderedShapeFrame, ...)` overload. These are not in the existing preview.10 packages and do not replace ordinary triangle drawing. See [the ownership and fallback contract](docs/draw2d.md#unreleased-ordered-baked-meshes).
+Since preview.11, `BakedShapeMesh`, explicit `BakedMeshLimits`, `OrderedShapeDrawList` and `VulkanRenderer.Draw(OrderedShapeFrame, ...)` provide reusable GPU meshes with dynamic instances. Ordinary triangle drawing remains available. See [the ownership and fallback contract](docs/draw2d.md#ordered-shared-meshes).
 
-Local disc/compound-rectangle geometry is immutable; dynamic instances update position, uniform scale and premultiplied color. Adjacent compatible operations may batch, but translucent objects are never sorted. Unsupported precision/transforms keep the triangle path. This targets CPU expansion and upload volume, not an already batched draw-call count. Application configuration and any production path selector remain application-owned; no alternate default is enabled.
+Local disc/compound-rectangle geometry is immutable; dynamic instances update position, uniform scale and premultiplied color. Adjacent compatible operations may batch, but translucent objects are never sorted. Unsupported precision/transforms keep the triangle path. This targets CPU expansion and upload volume, not an already batched draw-call count. Application configuration and selection of a default rendering path remain application-owned.
 
 ## Requirements and limits
 
@@ -80,15 +80,15 @@ A game references only the modules it needs:
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="CrushKit.Brutal.Draw2D" Version="0.1.0-preview.10" />
-  <PackageReference Include="CrushKit.Brutal.Vulkan" Version="0.1.0-preview.10" />
+  <PackageReference Include="CrushKit.Brutal.Draw2D" Version="0.1.0-preview.11" />
+  <PackageReference Include="CrushKit.Brutal.Vulkan" Version="0.1.0-preview.11" />
   <!-- Optional inspector: -->
-  <PackageReference Include="CrushKit.Brutal.ImGui" Version="0.1.0-preview.10" />
+  <PackageReference Include="CrushKit.Brutal.ImGui" Version="0.1.0-preview.11" />
   <!-- Independent mechanics, if needed: -->
-  <PackageReference Include="CrushKit.Brutal.Input" Version="0.1.0-preview.10" />
-  <PackageReference Include="CrushKit.Brutal.Audio" Version="0.1.0-preview.10" />
-  <PackageReference Include="CrushKit.Brutal.Ecs" Version="0.1.0-preview.10" />
-  <PackageReference Include="CrushKit.Brutal.Physics" Version="0.1.0-preview.10" />
+  <PackageReference Include="CrushKit.Brutal.Input" Version="0.1.0-preview.11" />
+  <PackageReference Include="CrushKit.Brutal.Audio" Version="0.1.0-preview.11" />
+  <PackageReference Include="CrushKit.Brutal.Ecs" Version="0.1.0-preview.11" />
+  <PackageReference Include="CrushKit.Brutal.Physics" Version="0.1.0-preview.11" />
 </ItemGroup>
 ```
 

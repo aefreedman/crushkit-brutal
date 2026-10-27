@@ -53,9 +53,9 @@ The Unity Shapes public interfaces in read-only PrototypeStudio were a **concept
 
 Curves target <=0.25 physical-pixel chord error (8-4096 full-circle segments). Framebuffer coordinate magnitude is bounded by 2^20; default budgets are 1,000,000 vertices / 3,000,000 indices. Invalid/nonfinite/negative input or state throws. Valid zero-size/alpha/empty-clip/singular-transform shapes emit nothing. Reflections are supported, but finite geometry can be unrepresentable in float32: actual inverted triangles or touching/crossing quantized polyline boundaries are rejected transactionally, not repaired. Budget/tessellation/pattern-complexity failures also throw without partial shape output, including command merging: each failing shape call leaves previously published vertices, indices and commands unchanged. This does not extend borrowed-frame lifetime.
 
-## Unreleased ordered baked meshes
+## Ordered shared meshes
 
-This source-only alternative is not enabled by ordinary `ShapeDrawList`/`VulkanRenderer.Draw(ShapeFrame, ...)` calls or included in the existing preview.10 packages. It supplies immutable local discs and nonoverlapping, optionally touching compound rectangles, not a general scene/path framework. Rounded bricks, arbitrary triangles, outlines and trails may continue through the ordinary dynamic path.
+Available since preview.11, this explicit path is selected through `OrderedShapeDrawList` and `VulkanRenderer.Draw(OrderedShapeFrame, ...)`; ordinary `ShapeDrawList`/`VulkanRenderer.Draw(ShapeFrame, ...)` calls remain triangle rendering. It supplies immutable local discs and nonoverlapping, optionally touching compound rectangles, not a general scene/path framework. Rounded bricks, arbitrary triangles, outlines and trails may continue through the ordinary dynamic path.
 
 Create an `OrderedShapeDrawList` with application-supplied immutable `BakedMeshLimits`; no settings defaults are supplied. Consume a finished frame synchronously before reusing **either** producer:
 
